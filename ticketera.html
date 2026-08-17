@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HelpDesk Pro</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+:root{
+  --bg:#0d0f14;--surface:#13161d;--surface2:#1a1e28;--surface3:#222736;
+  --border:#252a38;--border2:#2e3548;
+  --text:#e2e6f0;--text-dim:#6b7494;--text-muted:#3d4460;
+  --accent:#5b8af0;--accent-dim:#1e2d55;
+  --green:#22c55e;--red:#ef4444;--orange:#f97316;--yellow:#eab308;--purple:#a855f7;
+  --sidebar-w:230px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Space Grotesk',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:14px;}
+
+/* ══ LOGIN ══ */
+#login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;
+  background:var(--bg);background-image:radial-gradient(ellipse at 20% 50%,#1e2d5522 0%,transparent 60%),
+  radial-gradient(ellipse at 80% 20%,#2d1e5522 0%,transparent 60%);}
+.auth-card{background:var(--surface);border:1px solid var(--border2);border-radius:16px;
+  padding:2.5rem;width:100%;max-width:420px;box-shadow:0 24px 64px #00000066;}
+.auth-logo{text-align:center;margin-bottom:1.75rem;}
+.auth-logo-icon{font-size:2.2rem;display:block;margin-bottom:.5rem;}
+.auth-logo-name{font-size:1.5rem;font-weight:700;letter-spacing:-.02em;}
+.auth-logo-sub{font-size:.7rem;color:var(--text-dim);letter-spacing:.1em;text-transform:uppercase;font-family:'JetBrains Mono',monospace;}
+.auth-tabs{display:flex;gap:0;margin-bottom:1.75rem;background:var(--surface2);border-radius:8px;padding:3px;}
+.auth-tab{flex:1;padding:.5rem;text-align:center;font-size:.82rem;font-weight:500;color:var(--text-dim);
+  cursor:pointer;border-radius:6px;transition:all .15s;border:none;background:none;}
+.auth-tab.active{background:var(--surface3);color:var(--text);box-shadow:0 1px 4px #00000040;}
+.auth-form{display:flex;flex-direction:column;gap:.85rem;}
+.auth-field{display:flex;flex-direction:column;gap:.35rem;}
+.auth-field label{font-size:.7rem;font-family:'JetBrains Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);}
+.auth-field input,.auth-field select{background:var(--surface2);border:1px solid var(--border2);border-radius:8px;
+  padding:.6rem .85rem;font-family:'Space Grotesk',sans-serif;font-size:.9rem;color:var(--text);outline:none;transition:border-color .15s;}
+.auth-field input:focus,.auth-field select:focus{border-color:var(--accent);}
+.auth-error{font-size:.78rem;color:var(--red);min-height:1.1rem;}
+.btn-auth{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:.75rem;
+  font-family:'Space Grotesk',sans-serif;font-size:.9rem;font-weight:600;cursor:pointer;transition:all .15s;margin-top:.25rem;}
+.btn-auth:hover{background:#4a79df;}
+
+/* ══ LAYOUT ══ */
+#app-screen{display:none;min-height:100vh;}
+.layout{display:flex;min-height:100vh;}
+
+/* SIDEBAR */
+.sidebar{width:var(--sidebar-w);background:var(--surface);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;position:fixed;top:0;bottom:0;left:0;z-index:50;overflow-y:auto;}
+.sidebar-header{padding:1.1rem 1rem;border-bottom:1px solid var(--border);}
+.sidebar-logo{display:flex;align-items:center;gap:.6rem;}
+.sidebar-logo-icon{font-size:1.3rem;}
+.sidebar-logo-name{font-size:.95rem;font-weight:700;}
+.sidebar-logo-sub{font-size:.58rem;color:var(--text-dim);font-family:'JetBrains Mono',monospace;letter-spacing:.08em;text-transform:uppercase;}
+.sidebar-user{padding:.8rem 1rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:.6rem;}
+.user-av{width:32px;height:32px;border-radius:50%;background:var(--accent-dim);border:1px solid var(--accent);
+  display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:700;color:var(--accent);flex-shrink:0;}
+.sidebar-user-name{font-size:.82rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.sidebar-user-role{font-size:.62rem;color:var(--text-dim);font-family:'JetBrains Mono',monospace;}
+.sidebar-nav{flex:1;padding:.6rem .5rem;}
+.nav-section{font-size:.58rem;font-family:'JetBrains Mono',monospace;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--text-muted);padding:.5rem .6rem;margin-top:.4rem;}
+.nav-item{display:flex;align-items:center;gap:.6rem;padding:.52rem .75rem;border-radius:8px;cursor:pointer;
+  transition:all .15s;color:var(--text-dim);font-size:.84rem;font-weight:500;background:none;border:none;width:100%;text-align:left;}
+.nav-item:hover{background:var(--surface2);color:var(--text);}
+.nav-item.active{background:var(--accent-dim);color:var(--accent);}
+.nav-icon{font-size:.95rem;width:20px;text-align:center;}
+.sidebar-footer{padding:.75rem 1rem;border-top:1px solid var(--border);}
+.btn-logout{width:100%;background:transparent;border:1px solid var(--border2);border-radius:8px;
+  padding:.5rem;font-family:'Space Grotesk',sans-serif;font-size:.8rem;color:var(--text-dim);cursor:pointer;transition:all .15s;}
+.btn-logout:hover{border-color:var(--red);color:var(--red);}
+
+/* MAIN */
+.main-content{margin-left:var(--sidebar-w);flex:1;display:flex;flex-direction:column;min-height:100vh;}
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:.8rem 1.5rem;
+  display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:40;}
+.topbar-title{font-size:.95rem;font-weight:600;}
+.topbar-actions{display:flex;gap:.6rem;}
+.page-content{padding:1.5rem;flex:1;}
+
+/* ══ VIEWS ══ */
+.view{display:none;}
+
+/* DASHBOARD */
+.dash-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.65rem;margin-bottom:1.25rem;}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:.9rem 1rem;}
+.stat-label{font-size:.6rem;font-family:'JetBrains Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin-bottom:.35rem;}
+.stat-num{font-size:1.9rem;font-weight:700;line-height:1;}
+.stat-num.red{color:var(--red);}.stat-num.blue{color:var(--accent);}.stat-num.green{color:var(--green);}.stat-num.grey{color:var(--text-dim);}.stat-num.orange{color:var(--orange);}
+.type-stats{display:flex;gap:.65rem;margin-bottom:1.25rem;flex-wrap:wrap;}
+.type-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:.7rem 1rem;
+  display:flex;align-items:center;gap:.65rem;flex:1;min-width:110px;}
+.type-big{font-size:1.6rem;font-weight:700;}
+.type-lbl{font-size:.6rem;font-family:'JetBrains Mono',monospace;color:var(--text-dim);}
+.type-name{font-size:.8rem;font-weight:500;}
+.section-title{font-size:.68rem;font-family:'JetBrains Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin-bottom:.65rem;}
+
+/* TICKET ROWS */
+.ticket-list{display:flex;flex-direction:column;gap:.35rem;}
+.ticket-row{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:.7rem 1rem;
+  display:flex;align-items:center;justify-content:space-between;gap:1rem;cursor:pointer;transition:all .15s;}
+.ticket-row:hover{border-color:var(--border2);background:var(--surface2);}
+.tr-left{display:flex;align-items:center;gap:.65rem;min-width:0;flex:1;}
+.type-badge{font-family:'JetBrains Mono',monospace;font-size:.62rem;font-weight:700;padding:.18rem .48rem;border-radius:5px;color:#fff;flex-shrink:0;}
+.tr-info{min-width:0;display:flex;align-items:center;flex-wrap:wrap;gap:.3rem;}
+.tr-id{font-family:'JetBrains Mono',monospace;font-size:.66rem;color:var(--text-dim);}
+.tr-title{font-size:.86rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:320px;}
+.tr-cat{font-size:.65rem;color:var(--text-dim);font-family:'JetBrains Mono',monospace;background:var(--surface3);padding:.1rem .35rem;border-radius:4px;}
+.tr-right{display:flex;align-items:center;gap:.55rem;flex-shrink:0;}
+.prio-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.status-chip{font-size:.62rem;font-family:'JetBrains Mono',monospace;padding:.18rem .5rem;border-radius:5px;white-space:nowrap;font-weight:600;}
+.tr-date{font-size:.65rem;color:var(--text-muted);font-family:'JetBrains Mono',monospace;min-width:22px;text-align:right;}
+
+/* FILTERS */
+.filters-bar{display:flex;gap:.55rem;margin-bottom:.9rem;flex-wrap:wrap;align-items:center;}
+.filter-sel,.filter-inp{background:var(--surface2);border:1px solid var(--border2);border-radius:7px;
+  padding:.42rem .7rem;font-family:'Space Grotesk',sans-serif;font-size:.8rem;color:var(--text);outline:none;}
+.filter-inp{flex:1;min-width:150px;}
+.filter-inp::placeholder{color:var(--text-muted);}
+.tickets-count{font-family:'JetBrains Mono',monospace;font-size:.7rem;color:var(--text-dim);margin-left:auto;}
+
+/* USERS */
+.user-row{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:.7rem 1rem;
+  display:flex;align-items:center;gap:.75rem;margin-bottom:.35rem;}
+.user-avatar{width:36px;height:36px;border-radius:50%;background:var(--accent-dim);border:1px solid var(--accent);
+  display:flex;align-items:center;justify-content:center;font-size:.9rem;font-weight:700;color:var(--accent);flex-shrink:0;}
+.user-info{flex:1;min-width:0;}
+.user-name{font-weight:600;font-size:.86rem;display:block;}
+.user-email{font-size:.7rem;color:var(--text-dim);}
+.role-chip{font-size:.62rem;font-family:'JetBrains Mono',monospace;padding:.18rem .5rem;border-radius:5px;font-weight:600;}
+.role-chip.role-admin{background:#1e2d5540;color:var(--accent);}
+.role-chip.role-analyst{background:#22c55e20;color:var(--green);}
+.role-chip.role-tech{background:#f9731620;color:var(--orange);}
+.role-chip.role-client{background:#a855f720;color:var(--purple);}
+.role-sel{background:var(--surface2);border:1px solid var(--border2);border-radius:6px;
+  padding:.28rem .5rem;font-family:'Space Grotesk',sans-serif;font-size:.76rem;color:var(--text);outline:none;}
+
+/* ══ MODALS ══ */
+.modal-overlay{display:none;position:fixed;inset:0;background:#00000090;z-index:200;
+  align-items:center;justify-content:center;padding:1rem;}
+.modal{background:var(--surface);border:1px solid var(--border2);border-radius:16px;
+  width:100%;max-width:560px;max-height:90vh;overflow-y:auto;box-shadow:0 32px 80px #00000088;}
+.modal-lg{max-width:700px;}
+.modal-header{padding:1.15rem 1.5rem;border-bottom:1px solid var(--border);display:flex;align-items:center;
+  justify-content:space-between;position:sticky;top:0;background:var(--surface);z-index:1;}
+.modal-title{font-size:.95rem;font-weight:600;}
+.modal-close{background:none;border:none;color:var(--text-dim);font-size:1.1rem;cursor:pointer;
+  width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;}
+.modal-close:hover{background:var(--surface2);color:var(--text);}
+.modal-body{padding:1.4rem;}
+.modal-footer{padding:.9rem 1.4rem;border-top:1px solid var(--border);display:flex;gap:.55rem;justify-content:flex-end;}
+
+/* FORM */
+.field-group{display:flex;flex-direction:column;gap:.32rem;margin-bottom:.8rem;}
+.field-group label{font-size:.66rem;font-family:'JetBrains Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);}
+.field-input,.field-select,.field-textarea{background:var(--surface2);border:1px solid var(--border2);border-radius:8px;
+  padding:.55rem .8rem;font-family:'Space Grotesk',sans-serif;font-size:.86rem;color:var(--text);outline:none;width:100%;transition:border-color .15s;}
+.field-input:focus,.field-select:focus,.field-textarea:focus{border-color:var(--accent);}
+.field-textarea{resize:vertical;min-height:85px;}
+.field-row{display:flex;gap:.7rem;}
+.field-row .field-group{flex:1;}
+
+/* AI */
+.btn-ai{background:linear-gradient(135deg,#2d4a8a,#6a3a9a);border:none;border-radius:8px;
+  padding:.52rem 1rem;font-family:'Space Grotesk',sans-serif;font-size:.8rem;font-weight:600;
+  color:#fff;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:.4rem;margin-bottom:.7rem;}
+.btn-ai:hover{opacity:.85;}
+.btn-ai:disabled{opacity:.45;cursor:wait;}
+.ai-result-box{display:none;background:#1e2d5533;border:1px solid #3a5a9a;border-radius:8px;
+  padding:.7rem .9rem;margin-bottom:.8rem;font-size:.8rem;line-height:1.55;align-items:flex-start;gap:.5rem;}
+.ai-icon{font-size:.95rem;flex-shrink:0;}
+.ai-reason{color:var(--text-dim);font-size:.74rem;display:block;margin-top:.2rem;}
+
+/* TICKET DETAIL */
+.detail-meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:.55rem;
+  background:var(--surface2);border-radius:10px;padding:.85rem;margin-bottom:.9rem;}
+.detail-meta-label{font-size:.6rem;font-family:'JetBrains Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);margin-bottom:.18rem;}
+.detail-meta-val{font-size:.84rem;font-weight:500;}
+.detail-desc-box{background:var(--surface2);border-radius:10px;padding:.85rem;font-size:.86rem;
+  line-height:1.6;color:var(--text-dim);margin-bottom:.9rem;white-space:pre-wrap;}
+.detail-section{font-size:.65rem;font-family:'JetBrains Mono',monospace;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--text-muted);margin-bottom:.55rem;margin-top:.9rem;}
+.detail-manage-row{display:flex;gap:.55rem;margin-bottom:.55rem;align-items:center;flex-wrap:wrap;}
+
+/* COMMENTS */
+.comments-wrap{display:flex;flex-direction:column;gap:.45rem;max-height:190px;overflow-y:auto;margin-bottom:.7rem;}
+.comment{background:var(--surface2);border-radius:8px;padding:.55rem .8rem;border:1px solid var(--border);}
+.comment.mine{border-left:2px solid var(--accent);}
+.comment-meta{display:flex;gap:.45rem;align-items:center;margin-bottom:.28rem;}
+.comment-author{font-weight:600;font-size:.76rem;}
+.comment-role{font-size:.6rem;font-family:'JetBrains Mono',monospace;color:var(--text-dim);
+  background:var(--surface3);padding:.08rem .32rem;border-radius:4px;}
+.comment-time{font-size:.6rem;color:var(--text-muted);font-family:'JetBrains Mono',monospace;margin-left:auto;}
+.comment-body{font-size:.8rem;line-height:1.5;color:var(--text-dim);}
+.no-comments{font-size:.76rem;color:var(--text-muted);text-align:center;padding:.7rem;}
+.comment-input-row{display:flex;gap:.45rem;}
+.comment-input-row .field-input{flex:1;}
+
+/* MISC */
+.empty-state{text-align:center;padding:2rem;color:var(--text-muted);font-size:.84rem;}
+.live-dot{display:inline-flex;align-items:center;gap:.35rem;font-family:'JetBrains Mono',monospace;
+  font-size:.63rem;color:var(--green);letter-spacing:.08em;}
+.live-dot::before{content:'';display:block;width:7px;height:7px;border-radius:50%;
+  background:var(--green);animation:pulse 2s ease-in-out infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.4;}}
+
+/* BUTTONS */
+.btn{padding:.5rem 1rem;border-radius:8px;border:none;font-family:'Space Grotesk',sans-serif;
+  font-size:.8rem;font-weight:600;cursor:pointer;transition:all .15s;white-space:nowrap;}
+.btn-primary{background:var(--accent);color:#fff;}
+.btn-primary:hover{background:#4a79df;}
+.btn-ghost{background:var(--surface2);border:1px solid var(--border2);color:var(--text-dim);}
+.btn-ghost:hover{color:var(--text);}
+.btn-sm{padding:.32rem .7rem;font-size:.74rem;}
+
+/* TOAST */
+.toast{position:fixed;bottom:1.5rem;right:1.5rem;padding:.6rem 1.1rem;border-radius:8px;
+  font-size:.8rem;font-weight:600;opacity:0;pointer-events:none;transition:opacity .25s;z-index:999;
+  background:var(--green);color:#fff;}
+.toast.error{background:var(--red);}
+.toast.show{opacity:1;}
+
+/* CONFIG BANNER */
+.config-banner{background:#1e2d5533;border:1px solid #3a5a9a55;border-left:3px solid var(--accent);
+  border-radius:10px;padding:1rem 1.2rem;margin-bottom:1.2rem;font-size:.82rem;line-height:1.6;}
+.config-banner h3{color:var(--accent);font-size:.88rem;margin-bottom:.35rem;}
+.config-banner code{font-family:'JetBrains Mono',monospace;font-size:.74rem;background:var(--surface3);
+  padding:.1rem .3rem;border-radius:4px;color:#a8c4ff;}
+
+::-webkit-scrollbar{width:5px;height:5px;}
+::-webkit-scrollbar-track{background:var(--surface);}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px;}
+@media(max-width:640px){
+  :root{--sidebar-w:200px;}
+  .field-row{flex-direction:column;}
+  .tr-title{max-width:140px;}
+}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════ LOGIN ══════════════════ -->
+<div id="login-screen">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <span class="auth-logo-icon">🎫</span>
+      <div class="auth-logo-name">HelpDesk Pro</div>
+      <div class="auth-logo-sub">Sistema de Tickets</div>
+    </div>
+    <div class="auth-tabs">
+      <button class="auth-tab active" data-tab="login" onclick="switchAuthTab('login')">Iniciar sesión</button>
+      <button class="auth-tab" data-tab="register" onclick="switchAuthTab('register')">Registrarse</button>
+    </div>
+    <div id="login-form" class="auth-form">
+      <div class="auth-field"><label>Correo</label>
+        <input type="email" id="l-email" placeholder="tu@correo.com" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <div class="auth-field"><label>Contraseña</label>
+        <input type="password" id="l-pass" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <div class="auth-error" id="l-error"></div>
+      <button class="btn-auth" onclick="doLogin()">Ingresar →</button>
+    </div>
+    <div id="reg-form" class="auth-form" style="display:none">
+      <div class="auth-field"><label>Nombre completo</label>
+        <input type="text" id="r-name" placeholder="Ej: Juan Pérez"></div>
+      <div class="auth-field"><label>Correo</label>
+        <input type="email" id="r-email" placeholder="tu@correo.com"></div>
+      <div class="auth-field"><label>Contraseña (mín. 6 caracteres)</label>
+        <input type="password" id="r-pass" placeholder="••••••••"></div>
+      <div class="auth-field"><label>Rol</label>
+        <select id="r-role">
+          <option value="client">Cliente</option>
+          <option value="tech">Técnico</option>
+          <option value="analyst">Analista</option>
+          <option value="admin">Administrador</option>
+        </select></div>
+      <div class="auth-error" id="r-error"></div>
+      <button class="btn-auth" onclick="doRegister()">Crear cuenta →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ APP ══════════════════ -->
+<div id="app-screen">
+  <div class="layout">
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-logo">
+          <span class="sidebar-logo-icon">🎫</span>
+          <div>
+            <div class="sidebar-logo-name">HelpDesk Pro</div>
+            <div class="sidebar-logo-sub">v1.0 · EN VIVO</div>
+          </div>
+        </div>
+      </div>
+      <div class="sidebar-user">
+        <div class="user-av" id="sidebar-av">?</div>
+        <div>
+          <div class="sidebar-user-name" id="user-name">—</div>
+          <div class="sidebar-user-role" id="user-role">—</div>
+        </div>
+      </div>
+      <nav class="sidebar-nav">
+        <div class="nav-section">Principal</div>
+        <button class="nav-item active" data-view="dashboard" onclick="switchView('dashboard')">
+          <span class="nav-icon">📊</span> Dashboard</button>
+        <button class="nav-item" data-view="tickets" onclick="switchView('tickets')">
+          <span class="nav-icon">🎫</span> Todos los tickets</button>
+        <button class="nav-item" data-view="my-tickets" data-roles="admin,analyst,tech" onclick="switchView('my-tickets')">
+          <span class="nav-icon">📋</span> Mis asignados</button>
+        <div class="nav-section" data-roles="admin">Administración</div>
+        <button class="nav-item" data-view="users" data-roles="admin" onclick="switchView('users')">
+          <span class="nav-icon">👥</span> Usuarios</button>
+        <button class="nav-item" data-view="reports" data-roles="admin,analyst" onclick="switchView('reports')">
+          <span class="nav-icon">📈</span> Reportes</button>
+      </nav>
+      <div class="sidebar-footer">
+        <button class="btn-logout" onclick="doLogout()">↩ Cerrar sesión</button>
+      </div>
+    </aside>
+
+    <!-- MAIN -->
+    <div class="main-content">
+      <div class="topbar">
+        <span class="topbar-title" id="topbar-title">Dashboard</span>
+        <div class="topbar-actions">
+          <span class="live-dot">Sincronizado</span>
+          <button class="btn btn-primary btn-sm" onclick="openNewTicket()">+ Nuevo ticket</button>
+        </div>
+      </div>
+      <div class="page-content">
+
+        <!-- ── DASHBOARD ── -->
+        <div id="view-dashboard" class="view">
+          <div class="dash-stats">
+            <div class="stat-card"><div class="stat-label">Abiertos</div><div class="stat-num red" id="dash-open">0</div></div>
+            <div class="stat-card"><div class="stat-label">Asignados</div><div class="stat-num orange" id="dash-assigned">0</div></div>
+            <div class="stat-card"><div class="stat-label">En progreso</div><div class="stat-num blue" id="dash-progress">0</div></div>
+            <div class="stat-card"><div class="stat-label">Resueltos</div><div class="stat-num green" id="dash-resolved">0</div></div>
+            <div class="stat-card"><div class="stat-label">Cerrados</div><div class="stat-num grey" id="dash-closed">0</div></div>
+          </div>
+          <div class="type-stats">
+            <div class="type-card">
+              <span class="type-big" style="color:#ef4444" id="dash-I">0</span>
+              <div><div class="type-lbl">Tipo I</div><div class="type-name">Incidentes</div></div>
+            </div>
+            <div class="type-card">
+              <span class="type-big" style="color:#5b8af0" id="dash-R">0</span>
+              <div><div class="type-lbl">Tipo R</div><div class="type-name">Requerimientos</div></div>
+            </div>
+            <div class="type-card">
+              <span class="type-big" style="color:#a855f7" id="dash-C">0</span>
+              <div><div class="type-lbl">Tipo C</div><div class="type-name">Control Cambios</div></div>
+            </div>
+          </div>
+          <div class="section-title">Tickets recientes</div>
+          <div class="ticket-list" id="dash-recent"></div>
+        </div>
+
+        <!-- ── TODOS LOS TICKETS ── -->
+        <div id="view-tickets" class="view">
+          <div class="filters-bar">
+            <input class="filter-inp" type="text" id="f-search"
+              placeholder="🔍 Buscar por ID, título, categoría…" oninput="renderTickets()">
+            <select class="filter-sel" id="f-type" onchange="renderTickets()">
+              <option value="">Todos los tipos</option>
+              <option value="I">I — Incidente</option>
+              <option value="R">R — Requerimiento</option>
+              <option value="C">C — Control de Cambios</option>
+            </select>
+            <select class="filter-sel" id="f-status" onchange="renderTickets()">
+              <option value="">Todos los estados</option>
+              <option value="open">Abierto</option>
+              <option value="assigned">Asignado</option>
+              <option value="progress">En Progreso</option>
+              <option value="resolved">Resuelto</option>
+              <option value="closed">Cerrado</option>
+            </select>
+            <select class="filter-sel" id="f-prio" onchange="renderTickets()">
+              <option value="">Todas las prioridades</option>
+              <option value="critical">Crítica</option>
+              <option value="high">Alta</option>
+              <option value="medium">Media</option>
+              <option value="low">Baja</option>
+            </select>
+            <span class="tickets-count" id="tickets-count">0 tickets</span>
+          </div>
+          <div class="ticket-list" id="tickets-list"></div>
+        </div>
+
+        <!-- ── MIS ASIGNADOS ── -->
+        <div id="view-my-tickets" class="view">
+          <div class="section-title" style="margin-bottom:.65rem">Tickets asignados a mí</div>
+          <div class="ticket-list" id="my-tickets-list"></div>
+        </div>
+
+        <!-- ── USUARIOS ── -->
+        <div id="view-users" class="view">
+          <div class="section-title" style="margin-bottom:.65rem">Gestión de usuarios</div>
+          <div id="users-list"></div>
+        </div>
+
+        <!-- ── REPORTES ── -->
+        <div id="view-reports" class="view">
+          <div class="section-title" style="margin-bottom:.65rem">Resumen general</div>
+          <div id="report-content"></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL: NUEVO TICKET ══ -->
+<div class="modal-overlay" id="modal-new-ticket">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Nuevo ticket</span>
+      <button class="modal-close" onclick="closeModal('modal-new-ticket')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="config-banner" id="firebase-banner" style="display:none">
+        <h3>⚙️ Configura Firebase</h3>
+        Reemplaza <code>TU_API_KEY</code>, <code>TU_PROJECT</code>, etc. al inicio del archivo con tu configuración real.
+      </div>
+      <div class="field-group">
+        <label>Título *</label>
+        <input class="field-input" type="text" id="nt-title" placeholder="Describe brevemente el problema…">
+      </div>
+      <div class="field-group">
+        <label>Descripción *</label>
+        <textarea class="field-textarea" id="nt-desc" placeholder="Detalla el problema, pasos, impacto…"></textarea>
+      </div>
+      <button class="btn-ai" id="ai-suggest-btn" onclick="aiSuggest()">
+        🤖 Sugerir prioridad y categoría con IA
+      </button>
+      <div class="ai-result-box" id="ai-result-box"></div>
+      <div class="field-row">
+        <div class="field-group">
+          <label>Tipo</label>
+          <select class="field-select" id="nt-type">
+            <option value="I">I — Incidente</option>
+            <option value="R">R — Requerimiento</option>
+            <option value="C">C — Control de Cambios</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label>Prioridad</label>
+          <select class="field-select" id="nt-prio">
+            <option value="low">Baja</option>
+            <option value="medium" selected>Media</option>
+            <option value="high">Alta</option>
+            <option value="critical">Crítica</option>
+          </select>
+        </div>
+      </div>
+      <div class="field-group">
+        <label>Categoría</label>
+        <input class="field-input" type="text" id="nt-cat" placeholder="Ej: Red, Software, Acceso, Hardware…">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-new-ticket')">Cancelar</button>
+      <button class="btn btn-primary" onclick="createTicket()">Crear ticket</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL: DETALLE TICKET ══ -->
+<div class="modal-overlay" id="modal-ticket-detail">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <div style="display:flex;align-items:center;gap:.55rem;flex-wrap:wrap;">
+        <span class="modal-title" id="detail-id">#—</span>
+        <span id="detail-type-badge" class="type-badge"></span>
+        <span id="detail-status-badge" class="status-chip"></span>
+      </div>
+      <button class="modal-close" onclick="closeModal('modal-ticket-detail')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:.98rem;font-weight:600;margin-bottom:.75rem" id="detail-title"></div>
+      <div class="detail-meta-grid">
+        <div><div class="detail-meta-label">Prioridad</div><div class="detail-meta-val" id="detail-prio">—</div></div>
+        <div><div class="detail-meta-label">Categoría</div><div class="detail-meta-val" id="detail-cat">—</div></div>
+        <div><div class="detail-meta-label">Creado por</div><div class="detail-meta-val" id="detail-by">—</div></div>
+        <div><div class="detail-meta-label">Fecha</div><div class="detail-meta-val" id="detail-date">—</div></div>
+        <div><div class="detail-meta-label">Asignado a</div><div class="detail-meta-val" id="detail-assigned">—</div></div>
+        <div><div class="detail-meta-label">Última actualización</div><div class="detail-meta-val" id="detail-updated">—</div></div>
+      </div>
+      <div class="detail-meta-label">Descripción</div>
+      <div class="detail-desc-box" id="detail-desc"></div>
+
+      <!-- Gestión admin/analyst/tech -->
+      <div id="detail-manage-sec">
+        <div class="detail-section">Gestión</div>
+        <div class="detail-manage-row" id="detail-assign-sec">
+          <span style="font-size:.66rem;font-family:'JetBrains Mono',monospace;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em">Asignar a:</span>
+          <select class="filter-sel" id="detail-assign-sel"></select>
+          <button class="btn btn-ghost btn-sm" onclick="saveAssign()">Guardar asignación</button>
+        </div>
+        <div class="detail-manage-row">
+          <span style="font-size:.66rem;font-family:'JetBrains Mono',monospace;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em">Estado:</span>
+          <select class="filter-sel" id="detail-status-sel" onchange="updateStatus(this.value)">
+            <option value="open">Abierto</option>
+            <option value="assigned">Asignado</option>
+            <option value="progress">En Progreso</option>
+            <option value="resolved">Resuelto</option>
+            <option value="closed">Cerrado</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Comentarios -->
+      <div class="detail-section">Comentarios</div>
+      <div class="comments-wrap" id="detail-comments"></div>
+      <div class="comment-input-row">
+        <input class="field-input" type="text" id="comment-input"
+          placeholder="Escribe un comentario…"
+          onkeydown="if(event.key==='Enter') submitComment()">
+        <button class="btn btn-primary btn-sm" onclick="submitComment()">Enviar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- ══════════════════ FIREBASE + LÓGICA ══════════════════ -->
+<script type="module">
+import { initializeApp }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, set, get, update, onValue, remove, push }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
+  signOut, onAuthStateChanged }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+// ════════════════════════════════════════════
+// 🔥 PON AQUÍ TU CONFIGURACIÓN DE FIREBASE
+// ════════════════════════════════════════════
+const firebaseConfig = {
+  apiKey:            "TU_API_KEY",
+  authDomain:        "TU_PROJECT.firebaseapp.com",
+  databaseURL:       "https://TU_PROJECT-default-rtdb.firebaseio.com",
+  projectId:         "TU_PROJECT",
+  storageBucket:     "TU_PROJECT.appspot.com",
+  messagingSenderId: "TU_SENDER_ID",
+  appId:             "TU_APP_ID"
+};
+
+const app  = initializeApp(firebaseConfig);
+const db   = getDatabase(app);
+const auth = getAuth(app);
+
+// ── Constantes ──
+const ROLES      = { admin:'Administrador', analyst:'Analista', tech:'Técnico', client:'Cliente' };
+const TYPES      = { I:'Incidente', R:'Requerimiento', C:'Control de Cambios' };
+const TYPE_COL   = { I:'#ef4444', R:'#5b8af0', C:'#a855f7' };
+const PRIOS      = { critical:'Crítica', high:'Alta', medium:'Media', low:'Baja' };
+const PRIO_COL   = { critical:'#ef4444', high:'#f97316', medium:'#eab308', low:'#22c55e' };
+const STATUS     = { open:'Abierto', assigned:'Asignado', progress:'En Progreso', resolved:'Resuelto', closed:'Cerrado' };
+const STATUS_COL = { open:'#ef4444', assigned:'#f97316', progress:'#5b8af0', resolved:'#22c55e', closed:'#6b7494' };
+
+// ── Estado ──
+let me = null, myProfile = null;
+let tickets = [], users = [];
+let curTicket = null, curView = 'dashboard';
+
+// ════════════════════════════════════════════
+// AUTH
+// ════════════════════════════════════════════
+onAuthStateChanged(auth, async user => {
+  if (user) {
+    me = user;
+    const snap = await get(ref(db, `users/${user.uid}`));
+    myProfile = snap.val();
+    bootApp();
+  } else {
+    me = null; myProfile = null;
+    document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('app-screen').style.display   = 'none';
+  }
+});
+
+window.doLogin = async () => {
+  const email = document.getElementById('l-email').value.trim();
+  const pass  = document.getElementById('l-pass').value;
+  document.getElementById('l-error').textContent = '';
+  try { await signInWithEmailAndPassword(auth, email, pass); }
+  catch(e) { document.getElementById('l-error').textContent = 'Correo o contraseña incorrectos.'; }
+};
+
+window.doRegister = async () => {
+  const name  = document.getElementById('r-name').value.trim();
+  const email = document.getElementById('r-email').value.trim();
+  const pass  = document.getElementById('r-pass').value;
+  const role  = document.getElementById('r-role').value;
+  const errEl = document.getElementById('r-error');
+  errEl.textContent = '';
+  if (!name||!email||!pass) { errEl.textContent='Completa todos los campos.'; return; }
+  if (pass.length < 6) { errEl.textContent='La contraseña debe tener al menos 6 caracteres.'; return; }
+  try {
+    const cred = await createUserWithEmailAndPassword(auth, email, pass);
+    await set(ref(db,`users/${cred.user.uid}`), { name, email, role, uid:cred.user.uid, createdAt:Date.now() });
+  } catch(e) {
+    errEl.textContent = e.code==='auth/email-already-in-use'
+      ? 'Este correo ya está registrado.' : 'Error: '+e.message;
+  }
+};
+
+window.doLogout = () => signOut(auth);
+
+window.switchAuthTab = (tab) => {
+  document.getElementById('login-form').style.display = tab==='login'?'flex':'none';
+  document.getElementById('reg-form').style.display   = tab==='register'?'flex':'none';
+  document.querySelectorAll('.auth-tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===tab));
+};
+
+// ════════════════════════════════════════════
+// BOOT
+// ════════════════════════════════════════════
+function bootApp() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app-screen').style.display   = 'block';
+  const av = document.getElementById('sidebar-av');
+  if(av && myProfile?.name) av.textContent = myProfile.name[0].toUpperCase();
+  document.getElementById('user-name').textContent = myProfile?.name || '—';
+  document.getElementById('user-role').textContent = ROLES[myProfile?.role] || '—';
+
+  // Role-gated nav items
+  document.querySelectorAll('[data-roles]').forEach(el => {
+    const allowed = el.dataset.roles.split(',');
+    el.style.display = allowed.includes(myProfile?.role) ? '' : 'none';
+  });
+
+  // Subscribe
+  onValue(ref(db,'tickets'), snap => {
+    const data = snap.val();
+    tickets = data
+      ? Object.entries(data).map(([id,v])=>({id,...v})).sort((a,b)=>b.createdAt-a.createdAt)
+      : [];
+    refresh();
+  });
+  onValue(ref(db,'users'), snap => {
+    const data = snap.val();
+    users = data ? Object.entries(data).map(([id,v])=>({id,...v})) : [];
+    if(curView==='users') renderUsers();
+  });
+
+  switchView('dashboard');
+}
+
+// ════════════════════════════════════════════
+// VIEWS
+// ════════════════════════════════════════════
+window.switchView = function(name) {
+  curView = name;
+  const titles = { dashboard:'Dashboard', tickets:'Todos los tickets',
+    'my-tickets':'Mis asignados', users:'Usuarios', reports:'Reportes' };
+  document.getElementById('topbar-title').textContent = titles[name]||name;
+  document.querySelectorAll('.view').forEach(v=>v.style.display='none');
+  const el = document.getElementById('view-'+name);
+  if(el) el.style.display='block';
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.view===name));
+  refresh();
+};
+
+function refresh() {
+  if(curView==='dashboard')   renderDashboard();
+  if(curView==='tickets')     renderTickets();
+  if(curView==='my-tickets')  renderMyTickets();
+  if(curView==='users')       renderUsers();
+  if(curView==='reports')     renderReports();
+}
+
+// ── DASHBOARD ──
+function renderDashboard() {
+  const list = myProfile?.role==='client'
+    ? tickets.filter(t=>t.createdBy===me.uid) : tickets;
+  const cnt = {open:0,assigned:0,progress:0,resolved:0,closed:0,I:0,R:0,C:0};
+  list.forEach(t=>{
+    if(cnt[t.status]!==undefined) cnt[t.status]++;
+    if(cnt[t.type]!==undefined) cnt[t.type]++;
+  });
+  ['open','assigned','progress','resolved','closed'].forEach(k=>{
+    const el=document.getElementById('dash-'+k); if(el) el.textContent=cnt[k];
+  });
+  ['I','R','C'].forEach(k=>{
+    const el=document.getElementById('dash-'+k); if(el) el.textContent=cnt[k];
+  });
+  const el = document.getElementById('dash-recent');
+  if(el) el.innerHTML = list.slice(0,6).map(ticketRow).join('') || emptyState('Sin tickets aún');
+}
+
+// ── TICKETS ──
+window.renderTickets = function() {
+  const role = myProfile?.role;
+  let list = role==='client' ? tickets.filter(t=>t.createdBy===me.uid) : tickets;
+  const fs = v(id=>'f-search')?.value?.toLowerCase()||'';
+  const ft = v('f-type')?.value||'';
+  const fst= v('f-status')?.value||'';
+  const fp = v('f-prio')?.value||'';
+  if(fs) list=list.filter(t=>t.title?.toLowerCase().includes(fs)||t.id?.toLowerCase().includes(fs)||t.category?.toLowerCase().includes(fs));
+  if(ft) list=list.filter(t=>t.type===ft);
+  if(fst)list=list.filter(t=>t.status===fst);
+  if(fp) list=list.filter(t=>t.priority===fp);
+  const el=document.getElementById('tickets-list');
+  if(el) el.innerHTML=list.length?list.map(ticketRow).join(''):emptyState('No hay tickets');
+  const cnt=document.getElementById('tickets-count');
+  if(cnt) cnt.textContent=list.length+' tickets';
+};
+
+function renderMyTickets() {
+  const list = tickets.filter(t=>t.assignedTo===me.uid);
+  const el=document.getElementById('my-tickets-list');
+  if(el) el.innerHTML=list.length?list.map(ticketRow).join(''):emptyState('No tienes tickets asignados');
+}
+
+function ticketRow(t) {
+  return `<div class="ticket-row" onclick="openTicket('${t.id}')">
+    <div class="tr-left">
+      <span class="type-badge" style="background:${TYPE_COL[t.type]||'#888'}">${t.type}</span>
+      <div class="tr-info">
+        <span class="tr-id">#${t.id}</span>
+        <span class="tr-title">${esc(t.title)}</span>
+        ${t.category?`<span class="tr-cat">${esc(t.category)}</span>`:''}
+      </div>
+    </div>
+    <div class="tr-right">
+      <span class="prio-dot" style="background:${PRIO_COL[t.priority]||'#ccc'}" title="${PRIOS[t.priority]||''}"></span>
+      <span class="status-chip" style="background:${STATUS_COL[t.status]||'#888'}22;color:${STATUS_COL[t.status]||'#888'};border:1px solid ${STATUS_COL[t.status]||'#888'}44">
+        ${STATUS[t.status]||t.status}</span>
+      <span class="tr-date">${timeAgo(t.createdAt)}</span>
+    </div>
+  </div>`;
+}
+
+// ── TICKET DETAIL ──
+window.openTicket = function(id) {
+  curTicket = tickets.find(t=>t.id===id);
+  if(!curTicket) return;
+  const t = curTicket, role = myProfile?.role;
+
+  document.getElementById('detail-id').textContent   = '#'+t.id;
+  document.getElementById('detail-title').textContent= t.title;
+
+  const tb = document.getElementById('detail-type-badge');
+  tb.textContent = TYPES[t.type]||t.type;
+  tb.style.background = TYPE_COL[t.type]||'#888';
+
+  const sb = document.getElementById('detail-status-badge');
+  sb.textContent = STATUS[t.status]||t.status;
+  sb.style.background = (STATUS_COL[t.status]||'#888')+'22';
+  sb.style.color = STATUS_COL[t.status]||'#888';
+  sb.style.border = '1px solid '+(STATUS_COL[t.status]||'#888')+'44';
+
+  document.getElementById('detail-prio').textContent     = PRIOS[t.priority]||t.priority;
+  document.getElementById('detail-prio').style.color     = PRIO_COL[t.priority]||'#888';
+  document.getElementById('detail-cat').textContent      = t.category||'—';
+  document.getElementById('detail-by').textContent       = t.createdByName||'—';
+  document.getElementById('detail-date').textContent     = fmtDate(t.createdAt);
+  document.getElementById('detail-updated').textContent  = fmtDate(t.updatedAt);
+  document.getElementById('detail-assigned').textContent = t.assignedName||'Sin asignar';
+  document.getElementById('detail-desc').textContent     = t.desc||'';
+
+  // Manage section
+  const manageSec = document.getElementById('detail-manage-sec');
+  const canManage = ['admin','analyst','tech'].includes(role);
+  manageSec.style.display = canManage ? '' : 'none';
+
+  if(canManage) {
+    document.getElementById('detail-status-sel').value = t.status;
+    const assignSec = document.getElementById('detail-assign-sec');
+    if(['admin','analyst'].includes(role)) {
+      assignSec.style.display='';
+      const sel = document.getElementById('detail-assign-sel');
+      const agents = users.filter(u=>['analyst','tech'].includes(u.role));
+      sel.innerHTML = '<option value="">— Sin asignar —</option>' +
+        agents.map(u=>`<option value="${u.uid||u.id}" ${t.assignedTo===(u.uid||u.id)?'selected':''}>${esc(u.name)} (${ROLES[u.role]||u.role})</option>`).join('');
+    } else {
+      assignSec.style.display='none';
+    }
+  }
+
+  // Comments
+  const commEl = document.getElementById('detail-comments');
+  const comms = t.comments ? Object.values(t.comments).sort((a,b)=>a.createdAt-b.createdAt) : [];
+  commEl.innerHTML = comms.length
+    ? comms.map(c=>`
+      <div class="comment ${c.authorId===me.uid?'mine':''}">
+        <div class="comment-meta">
+          <span class="comment-author">${esc(c.authorName)}</span>
+          <span class="comment-role">${ROLES[c.role]||c.role}</span>
+          <span class="comment-time">${timeAgo(c.createdAt)}</span>
+        </div>
+        <div class="comment-body">${esc(c.text)}</div>
+      </div>`).join('')
+    : '<div class="no-comments">Sin comentarios aún — sé el primero</div>';
+  commEl.scrollTop = commEl.scrollHeight;
+
+  openModal('modal-ticket-detail');
+};
+
+window.updateStatus = async (val) => {
+  if(!curTicket) return;
+  await update(ref(db,`tickets/${curTicket.id}`), {status:val, updatedAt:Date.now()});
+  toast('Estado actualizado ✓');
+};
+
+window.saveAssign = async () => {
+  if(!curTicket) return;
+  const uid = document.getElementById('detail-assign-sel').value;
+  const u   = users.find(x=>(x.uid||x.id)===uid);
+  await update(ref(db,`tickets/${curTicket.id}`), {
+    assignedTo:   uid||null,
+    assignedName: u?.name||null,
+    status:       uid?'assigned':'open',
+    updatedAt:    Date.now()
+  });
+  toast(uid ? 'Asignado a '+u?.name : 'Asignación eliminada');
+};
+
+window.submitComment = async () => {
+  if(!curTicket) return;
+  const inp = document.getElementById('comment-input');
+  const txt = inp.value.trim();
+  if(!txt) return;
+  await push(ref(db,`tickets/${curTicket.id}/comments`), {
+    text: txt, authorId: me.uid, authorName: myProfile.name,
+    role: myProfile.role, createdAt: Date.now()
+  });
+  inp.value = '';
+  toast('Comentario añadido ✓');
+};
+
+// ── CREAR TICKET ──
+window.openNewTicket = () => {
+  document.getElementById('ai-result-box').style.display = 'none';
+  openModal('modal-new-ticket');
+};
+
+window.createTicket = async () => {
+  const title = document.getElementById('nt-title').value.trim();
+  const desc  = document.getElementById('nt-desc').value.trim();
+  const type  = document.getElementById('nt-type').value;
+  const prio  = document.getElementById('nt-prio').value;
+  const cat   = document.getElementById('nt-cat').value.trim();
+  if(!title||!desc) { toast('Completa título y descripción','error'); return; }
+  const id = 'T'+String(Date.now()).slice(-6);
+  await set(ref(db,`tickets/${id}`), {
+    id, title, desc, type, priority:prio, category:cat,
+    status:'open', createdBy:me.uid, createdByName:myProfile.name,
+    createdAt:Date.now(), updatedAt:Date.now(),
+    assignedTo:null, assignedName:null, comments:{}
+  });
+  toast('Ticket #'+id+' creado ✓');
+  closeModal('modal-new-ticket');
+  document.getElementById('nt-title').value='';
+  document.getElementById('nt-desc').value='';
+  document.getElementById('nt-cat').value='';
+};
+
+// ── IA ──
+window.aiSuggest = async () => {
+  const title = document.getElementById('nt-title').value.trim();
+  const desc  = document.getElementById('nt-desc').value.trim();
+  const type  = document.getElementById('nt-type').value;
+  if(!title&&!desc) { toast('Escribe un título o descripción primero','error'); return; }
+  const btn = document.getElementById('ai-suggest-btn');
+  btn.textContent='⏳ Analizando…'; btn.disabled=true;
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-6', max_tokens:500,
+        messages:[{role:'user',content:`Eres un asistente de helpdesk experto. Analiza este ticket y responde SOLO con JSON válido, sin texto adicional ni bloques de código.
+
+Tipo: ${TYPES[type]||type}
+Título: ${title}
+Descripción: ${desc}
+
+Responde EXACTAMENTE con este JSON:
+{"priority":"critical|high|medium|low","category":"categoría corta en español","reason":"una frase corta explicando la prioridad sugerida"}`}]
+      })
+    });
+    const data = await res.json();
+    let raw = data.content?.[0]?.text||'';
+    raw = raw.replace(/\`\`\`json|\`\`\`/g,'').trim();
+    const r = JSON.parse(raw);
+    document.getElementById('nt-prio').value = r.priority||'medium';
+    document.getElementById('nt-cat').value  = r.category||'';
+    const box = document.getElementById('ai-result-box');
+    box.style.display='flex';
+    box.innerHTML=`<span class="ai-icon">🤖</span><div>
+      <strong>Sugerencia IA:</strong> Prioridad <b style="color:${PRIO_COL[r.priority]||'#fff'}">${PRIOS[r.priority]||r.priority}</b>
+      · Categoría <b>${esc(r.category)}</b>
+      <span class="ai-reason">${esc(r.reason)}</span></div>`;
+  } catch(e) {
+    toast('Error al consultar la IA. Verifica tu conexión.','error');
+  }
+  btn.textContent='🤖 Sugerir con IA'; btn.disabled=false;
+};
+
+// ── USUARIOS ──
+function renderUsers() {
+  if(myProfile?.role!=='admin') return;
+  const el=document.getElementById('users-list');
+  if(!el) return;
+  el.innerHTML = users.length ? users.map(u=>`
+    <div class="user-row">
+      <div class="user-avatar">${(u.name||'?')[0].toUpperCase()}</div>
+      <div class="user-info">
+        <span class="user-name">${esc(u.name)}</span>
+        <span class="user-email">${esc(u.email)}</span>
+      </div>
+      <span class="role-chip role-${u.role}">${ROLES[u.role]||u.role}</span>
+      <select class="role-sel" onchange="changeRole('${u.uid||u.id}',this.value)">
+        ${Object.entries(ROLES).map(([k,lbl])=>`<option value="${k}" ${u.role===k?'selected':''}>${lbl}</option>`).join('')}
+      </select>
+    </div>`).join('') : emptyState('No hay usuarios registrados');
+}
+
+window.changeRole = async (uid, role) => {
+  await update(ref(db,`users/${uid}`),{role});
+  toast('Rol actualizado ✓');
+};
+
+// ── REPORTES ──
+function renderReports() {
+  const el = document.getElementById('report-content');
+  if(!el) return;
+  const byType={I:0,R:0,C:0};
+  const byPrio={critical:0,high:0,medium:0,low:0};
+  const byStatus={open:0,assigned:0,progress:0,resolved:0,closed:0};
+  tickets.forEach(t=>{
+    if(byType[t.type]!==undefined) byType[t.type]++;
+    if(byPrio[t.priority]!==undefined) byPrio[t.priority]++;
+    if(byStatus[t.status]!==undefined) byStatus[t.status]++;
+  });
+  const bar=(val,max,col)=>`<div style="height:8px;background:var(--surface3);border-radius:4px;overflow:hidden;margin-top:.3rem">
+    <div style="width:${max?Math.round(val/max*100):0}%;height:100%;background:${col};border-radius:4px;transition:width .4s"></div></div>`;
+  const total=tickets.length||1;
+  el.innerHTML=`
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:.75rem">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1rem">
+        <div class="section-title">Por tipo</div>
+        ${Object.entries(byType).map(([k,v])=>`
+          <div style="margin-bottom:.6rem">
+            <div style="display:flex;justify-content:space-between;font-size:.8rem">
+              <span>${TYPES[k]||k}</span><b>${v}</b></div>
+            ${bar(v,total,TYPE_COL[k]||'#888')}
+          </div>`).join('')}
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1rem">
+        <div class="section-title">Por prioridad</div>
+        ${Object.entries(byPrio).map(([k,v])=>`
+          <div style="margin-bottom:.6rem">
+            <div style="display:flex;justify-content:space-between;font-size:.8rem">
+              <span>${PRIOS[k]||k}</span><b>${v}</b></div>
+            ${bar(v,total,PRIO_COL[k]||'#888')}
+          </div>`).join('')}
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1rem">
+        <div class="section-title">Por estado</div>
+        ${Object.entries(byStatus).map(([k,v])=>`
+          <div style="margin-bottom:.6rem">
+            <div style="display:flex;justify-content:space-between;font-size:.8rem">
+              <span>${STATUS[k]||k}</span><b>${v}</b></div>
+            ${bar(v,total,STATUS_COL[k]||'#888')}
+          </div>`).join('')}
+      </div>
+    </div>`;
+}
+
+// ── HELPERS ──
+function openModal(id) { document.getElementById(id).style.display='flex'; }
+window.closeModal = (id) => { document.getElementById(id).style.display='none'; };
+window.openModal  = openModal;
+
+function toast(msg, type='success') {
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className='toast show '+(type==='error'?'error':'');
+  clearTimeout(t._tid); t._tid=setTimeout(()=>t.classList.remove('show'),2500);
+}
+function emptyState(msg) { return `<div class="empty-state">📭 ${msg}</div>`; }
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function timeAgo(ts){
+  if(!ts) return '—';
+  const d=Math.floor((Date.now()-ts)/1000);
+  if(d<60) return 'Ahora'; if(d<3600) return Math.floor(d/60)+'m';
+  if(d<86400) return Math.floor(d/3600)+'h'; return Math.floor(d/86400)+'d';
+}
+function fmtDate(ts){
+  if(!ts) return '—';
+  return new Date(ts).toLocaleDateString('es-CL',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+}
+function v(id){ return document.getElementById(id); }
+</script>
+</body>
+</html>
