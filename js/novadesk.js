@@ -40,6 +40,9 @@ const role = () => me()?.role;
 const staff = () => role() !== 'tecnico';
 const client = id => S.clients.find(c => c.id === id) || { name: '—', color: '#888', slaFactor: 1 };
 const user = id => S.users.find(u => u.id === id);
+/* A los tickets se les puede asignar cualquier usuario activo: el administrador actúa también como analista. */
+const assignable = () => S.users.filter(u => u.active);
+const uLabel = u => u.name + (u.role === 'tecnico' ? '' : ` (${ROLES[u.role].name})`);
 
 function seed() {
   const now = Date.now();
@@ -315,7 +318,16 @@ const authFrame = (title, sub, body) => `<div class="login"><div class="box" sty
   <h1 style="font-size:42px">NovaDesk</h1><p class="muted">${sub}</p>
   <form class="card col" id="authForm" data-kind="${title}" autocomplete="on" style="text-align:left;margin-top:22px"><h2>${title === 'login' ? 'Iniciar sesión' : title === 'setup' ? 'Configuración inicial' : 'Crea tu contraseña'}</h2>${body}</form></div></div>`;
 const pwField = (name, label, auto, id) => `<div><label>${label}</label><div class="row"><input ${id ? `id="${id}"` : ''} type="password" name="${name}" autocomplete="${auto}" required><button type="button" class="btn sm" data-act="togglePw" title="Mostrar u ocultar">👁</button></div></div>`;
-const pwHint = '<div class="muted sm" id="pwhint" data-pw>Mínimo 10 caracteres con mayúscula, minúscula, número y símbolo.</div>';
+const pwHint = '<div class="muted sm" id="pwhint" data-pw>Mínimo 10 caracteres con mayúscula, minúscula, número y símbolo.</div><div class="sm" id="pwmatch"></div>';
+function checkPwForm(form) {
+  const p1 = form.elements.p1.value, p2 = form.elements.p2.value, pr = pwProblems(p1), h = $('#pwhint'), m = $('#pwmatch');
+  h.textContent = !p1 ? 'Mínimo 10 caracteres con mayúscula, minúscula, número y símbolo.' : pr.length ? 'Falta: ' + pr.join(', ') : '✔ Contraseña segura';
+  h.style.color = p1 && !pr.length ? 'var(--ok)' : '';
+  const mismatch = !!p2 && p1 !== p2;
+  m.textContent = !p2 ? '' : mismatch ? '✖ Las contraseñas no coinciden' : '✔ Las contraseñas coinciden';
+  m.style.color = mismatch ? 'var(--bad)' : 'var(--ok)';
+  form.querySelector('[type=submit]').disabled = mismatch || (!!p1 && pr.length > 0);
+}
 function viewLogin() {
   if (needsSetup()) return viewSetup();
   const lock = !cryptoOk() ? '<div class="alert bad">Tu navegador no permite el cifrado necesario. Abre NovaDesk desde un navegador actualizado.</div>' : '';
@@ -384,7 +396,7 @@ function viewDashboard() {
   const done7 = vis.filter(t => !isOpen(t) && t.resolvedAt && Date.now() - t.resolvedAt < 7 * D).length;
   const byT = Object.keys(TYPES).map(k => ({ k, c: `var(--${k})`, v: open.filter(t => t.type === k).length }));
   const cl = S.clients.map(c => ({ c, n: open.filter(t => t.clientId === c.id).length })), mx = Math.max(1, ...cl.map(x => x.n));
-  const techs = S.users.filter(u => u.role === 'tecnico' && u.active);
+  const techs = S.users.filter(u => u.active && (u.role === 'tecnico' || S.tickets.some(t => t.assigneeId === u.id && isOpen(t))));
   const mine = open.filter(t => t.assigneeId === S.session).sort((a, b) => (slaInfo(b)?.pct || 0) - (slaInfo(a)?.pct || 0));
   const act = vis.flatMap(t => t.history.map(h => ({ ...h, t }))).sort((a, b) => b.at - a.at).slice(0, 7);
   return viewShell(`<h1 style="margin-bottom:16px">${role() === 'tecnico' ? 'Tu centro de mando' : 'Panel de control'} <span class="muted" style="font-size:15px">· ${new Date().toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })}</span></h1>
@@ -403,7 +415,7 @@ function viewDashboard() {
     <div class="card"><h3>Abiertos por tipo</h3><div class="row wrap" style="justify-content:space-around">${donut(byT)}<div class="col">${byT.map(p => `<div class="row"><span class="dot" style="background:${p.c}"></span>${TYPES[p.k].plural}<b>${p.v}</b></div>`).join('')}</div></div></div>
     <div class="card"><h3>Entrada de tickets · 14 días</h3>${trend(vis)}</div>
     <div class="card"><h3>Por cliente</h3><div class="col">${cl.map(x => `<div class="row"><span style="width:70px">${esc(x.c.name)}</span><div class="bar"><b style="width:${x.n / mx * 100}%;background:${x.c.color}"></b></div><b>${x.n}</b></div>`).join('')}</div></div>
-    ${staff() ? `<div class="card"><h3>Carga de técnicos</h3><div class="col">${techs.map(u => { const n = S.tickets.filter(t => t.assigneeId === u.id && isOpen(t)).length; return `<div class="row">${avatar(u)}<span style="width:110px">${esc(u.name.split(' ')[0])}</span><div class="bar"><b style="width:${Math.min(100, n * 20)}%;background:${n >= 4 ? 'var(--bad)' : 'var(--accent)'}"></b></div><b>${n}</b></div>`; }).join('')}</div></div>` : ''}
+    ${staff() ? `<div class="card"><h3>Carga del equipo</h3><div class="col">${techs.map(u => { const n = S.tickets.filter(t => t.assigneeId === u.id && isOpen(t)).length; return `<div class="row">${avatar(u)}<span style="width:110px">${esc(u.name.split(' ')[0])}</span><div class="bar"><b style="width:${Math.min(100, n * 20)}%;background:${n >= 4 ? 'var(--bad)' : 'var(--accent)'}"></b></div><b>${n}</b></div>`; }).join('')}</div></div>` : ''}
     <div class="card" style="grid-column:1/-1"><h3>Actividad reciente</h3>${act.map(a => `<div class="row sm" style="padding:5px 0;cursor:pointer" data-act="open" data-id="${a.t.id}">${avatar(user(a.by))}${tid(a.t)}<span class="grow">${esc(a.text)}</span><span class="muted">${rel(a.at)}</span></div>`).join('')}</div>
   </div>`);
 }
@@ -424,7 +436,7 @@ function viewTickets() {
     <select data-f="status">${opt('abiertos', 'Solo abiertos', f.status)}${opt('', 'Todos los estados', f.status)}${allSt.map(s => opt(s, s, f.status)).join('')}</select>
     <select data-f="client">${opt('', 'Todos los clientes', f.client)}${S.clients.map(c => opt(c.id, c.name, f.client)).join('')}</select>
     <select data-f="prio">${opt('', 'Toda prioridad', f.prio)}${Object.entries(PRIO).map(([k, v]) => opt(k, v, f.prio)).join('')}</select>
-    ${staff() ? `<select data-f="assignee">${opt('', 'Cualquier técnico', f.assignee)}${opt('none', 'Sin asignar', f.assignee)}${S.users.filter(u => u.role === 'tecnico').map(u => opt(u.id, u.name, f.assignee)).join('')}</select>` : ''}</div>
+    ${staff() ? `<select data-f="assignee">${opt('', 'Cualquier técnico', f.assignee)}${opt('none', 'Sin asignar', f.assignee)}${assignable().map(u => opt(u.id, uLabel(u), f.assignee)).join('')}</select>` : ''}</div>
   <div class="card" style="padding:6px 8px;overflow:auto">${list.length ? `<table><tr><th>ID</th><th>Asunto</th><th>Cliente</th><th>Prioridad</th><th>Estado</th><th>Asignado</th><th>SLA / Ventana</th></tr>
     ${list.map(t => `<tr class="click" data-act="open" data-id="${t.id}"><td>${tid(t)}</td><td><b>${esc(t.title)}</b><div class="muted sm">${esc(t.category)} · ${rel(t.createdAt)}</div></td><td>${clientB(t.clientId)}</td><td>${prioB(t.priority)}</td><td><span class="badge">${t.status}</span></td><td>${t.assigneeId ? `<div class="row">${avatar(user(t.assigneeId))}<span class="sm">${esc(user(t.assigneeId).name.split(' ')[0])}</span></div>` : '<span class="muted sm">—</span>'}</td><td>${slaB(t)}</td></tr>`).join('')}</table>` : `<div class="empty">${role() === 'tecnico' ? 'No tienes tickets asignados con estos filtros.' : 'Sin resultados.'}</div>`}</div>`);
 }
@@ -539,7 +551,7 @@ function viewDrawer(t) {
       <span>Cliente</span><b>${esc(client(t.clientId).name)}</b><span>Solicitante</span><span>${esc(t.requester || '—')}</span>
       <span>Prioridad</span>${ed ? `<select data-edit="priority">${Object.entries(PRIO).map(([k, v]) => opt(k, v, t.priority)).join('')}</select>` : prioB(t.priority)}
       <span>Categoría</span>${ed ? `<select data-edit="category">${CATS.map(c => opt(c, c, t.category)).join('')}</select>` : esc(t.category)}
-      <span>Asignado</span>${ed ? `<select data-edit="assigneeId">${opt('', '— Sin asignar —', t.assigneeId || '')}${S.users.filter(u => u.role === 'tecnico' && u.active).map(u => opt(u.id, u.name, t.assigneeId)).join('')}</select>` : `<div class="row">${avatar(user(t.assigneeId))} ${esc(user(t.assigneeId)?.name || '—')}</div>`}
+      <span>Asignado</span>${ed ? `<select data-edit="assigneeId">${opt('', '— Sin asignar —', t.assigneeId || '')}${assignable().map(u => opt(u.id, uLabel(u), t.assigneeId)).join('')}</select>` : `<div class="row">${avatar(user(t.assigneeId))} ${esc(user(t.assigneeId)?.name || '—')}</div>`}
       <span>SLA</span>${slaB(t)}</div></div>
     ${novaPanel(a, ed ? t : null)}</div></div></div></div>`;
 }
@@ -579,7 +591,7 @@ function nlSearch(q) {
   if (/critic|urgent/.test(n)) { f.prio = [1]; parts.push('Críticos'); } else if (/\balta/.test(n)) { f.prio = [1, 2]; parts.push('Alta+'); }
   if (/sin asignar/.test(n)) { f.unassigned = true; parts.push('Sin asignar'); }
   if (/\bmis\b|\bmio/.test(n)) { f.mine = true; parts.push('Asignados a mí'); }
-  const tech = S.users.find(u => u.role === 'tecnico' && n.includes(norm(u.name.split(' ')[0]))); if (tech) { f.tech = tech.id; parts.push(tech.name); }
+  const tech = S.users.find(u => n.includes(norm(u.name.split(' ')[0]))); if (tech) { f.tech = tech.id; parts.push(tech.name); }
   const st = [...FLOW.RI, ...FLOW.C].find(s => n.includes(norm(s))); if (st) { f.status = st; parts.push(st); }
   else if (/resuelto|cerrado/.test(n)) { f.closed = true; parts.push('Cerrados'); } else { f.open = true; }
   const stop = /incidente|requerimiento|cambio|critic|urgent|alta|sin asignar|mis|de|del|los|las|la|el|en|con|para|abierto|resuelto|cerrado/;
@@ -707,7 +719,7 @@ document.addEventListener('click', e => {
 });
 ['keydown', 'pointerdown'].forEach(ev => document.addEventListener(ev, () => S && S.session && touch(), { passive: true }));
 document.addEventListener('input', e => {
-  if (e.target.name === 'p1' && $('#pwhint')) { const pr = pwProblems(e.target.value), h = $('#pwhint'); h.textContent = pr.length ? 'Falta: ' + pr.join(', ') : '✔ Contraseña segura'; h.style.color = pr.length ? '' : 'var(--ok)'; return; }
+  if (['p1', 'p2'].includes(e.target.name) && $('#pwhint')) return checkPwForm(e.target.form);
   const f = e.target.dataset.f; if (f) { ui.f[f] = e.target.value; render(); return; }
   if (e.target.id === 'pal') return paletteResults();
   const form = e.target.closest('#newForm'); if (form) { clearTimeout(form._t); form._t = setTimeout(() => { const fd = new FormData(form); ui.draft = Object.fromEntries(fd.entries()); const focus = e.target.name, pos = e.target.selectionStart; render(); const el = $(`#newForm [name="${focus}"]`); if (el) { el.focus(); try { el.setSelectionRange(pos, pos); } catch {} } }, 350); }
