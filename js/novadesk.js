@@ -1,8 +1,8 @@
 /* NovaDesk — mesa de ayuda con Requerimientos, Incidentes y Control de Cambios.
-   App 100% front-end (datos en localStorage). Nova = motor de clasificación local. */
+   Front-end estático; datos y login en Supabase (PostgreSQL + Auth). Nova = motor de clasificación local. */
 (() => {
 'use strict';
-const KEY = 'novadesk.v1', THEME_KEY = 'novadesk.theme';
+const THEME_KEY = 'novadesk.theme';
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const H = 3600e3, D = 24 * H;
@@ -31,10 +31,9 @@ const OPEN_NOT = ['Resuelto', 'Cerrado', 'Rechazado', 'Implementado'];
 const isOpen = t => !OPEN_NOT.includes(t.status);
 
 /* ───────────── Estado y persistencia ───────────── */
-let S;
-const ui = { view: 'dashboard', f: { q: '', type: '', status: 'abiertos', client: '', prio: '', assignee: '' }, boardType: 'I', open: null, overlay: null, draft: null };
-const uid = () => Math.random().toString(36).slice(2, 9);
-const save = () => localStorage.setItem(KEY, JSON.stringify({ ...S, session: null }));
+let S = { users: [], clients: [], tickets: [], audit: [], session: null };
+const ui = { view: 'dashboard', f: { q: '', type: '', status: 'abiertos', client: '', prio: '', assignee: '' }, boardType: 'I', open: null, overlay: null, draft: null, booting: true };
+const uid = () => crypto.randomUUID();
 const me = () => S.users.find(u => u.id === S.session);
 const role = () => me()?.role;
 const staff = () => role() !== 'tecnico';
@@ -44,101 +43,134 @@ const user = id => S.users.find(u => u.id === id);
 const assignable = () => S.users.filter(u => u.active);
 const uLabel = u => u.name + (u.role === 'tecnico' ? '' : ` (${ROLES[u.role].name})`);
 
-function seed() {
-  const now = Date.now();
-  const users = [
-    { id: 'u1', name: 'Valentina Rojas', role: 'admin', active: true, skills: [] },
-    { id: 'u2', name: 'Matías Soto', role: 'analista', active: true, skills: [] },
-    { id: 'u3', name: 'Camila Fuentes', role: 'analista', active: true, skills: [] },
-    { id: 'u4', name: 'Diego Pérez', role: 'tecnico', active: true, skills: ['Red y conectividad', 'Servidores e infraestructura', 'Telefonía', 'Seguridad'] },
-    { id: 'u5', name: 'Sofía Lagos', role: 'tecnico', active: true, skills: ['Software y aplicaciones', 'Accesos y cuentas', 'Correo y colaboración', 'Base de datos'] },
-    { id: 'u6', name: 'Javier Muñoz', role: 'tecnico', active: true, skills: ['Hardware / Equipos', 'Impresión', 'Telefonía'] },
-  ];
-  const clients = [
-    { id: 'c1', name: 'Bupa', code: 'BUPA', color: '#4da3ff', contact: 'soporte@bupa.example', slaFactor: 0.75 },
-    { id: 'c2', name: 'Curico', code: 'CUR', color: '#ff8a4d', contact: 'ti@curico.example', slaFactor: 1 },
-    { id: 'c3', name: 'HAH', code: 'HAH', color: '#2de2a6', contact: 'informatica@hah.example', slaFactor: 1 },
-  ];
-  const seq = { R: 0, I: 0, C: 0 };
-  const tickets = [];
-  const mk = (type, title, desc, cl, hAgo, status, assignee, extra = {}) => {
-    const n = ++seq[type];
-    const t = { id: `${type}-${String(n).padStart(4, '0')}`, type, title, desc, clientId: cl, requester: extra.requester || 'Mesa de partes',
-      priority: extra.priority || 3, status, category: extra.category || 'General', assigneeId: assignee || null, createdBy: 'u2',
-      createdAt: now - hAgo * H, updatedAt: now - Math.max(0, hAgo - 1) * H, comments: [], history: [{ at: now - hAgo * H, by: 'u2', text: 'Ticket creado' }], ...extra };
-    if (['Resuelto', 'Cerrado', 'Implementado'].includes(status)) t.resolvedAt = now - Math.max(0, hAgo - 2) * H;
-    tickets.push(t); return t;
-  };
-  mk('I', 'Agenda médica caída en todas las consultas', 'Desde las 8:00 ningún box puede abrir la agenda. Hay pacientes esperando, es urgente.', 'c1', 2, 'En curso', 'u5', { priority: 1, category: 'Software y aplicaciones', requester: 'Admisión Bupa' });
-  mk('I', 'Impresora de etiquetas Zebra del laboratorio no imprime', 'Dejó de imprimir las etiquetas de muestras, la cola de impresión queda detenida.', 'c2', 5, 'Asignado', 'u6', { priority: 2, category: 'Impresión', requester: 'Laboratorio' });
-  mk('R', 'Alta de usuario para nueva enfermera', 'Solicito crear usuario y acceso al sistema clínico para Marcela Díaz, ingresa el lunes.', 'c1', 3, 'Nuevo', null, { priority: 3, category: 'Accesos y cuentas', requester: 'RRHH Bupa' });
-  const ch1 = mk('C', 'Actualización de firmware de switches core', 'Actualizar firmware de los 2 switches core a la versión estable recomendada por el fabricante.', 'c2', 30, 'Programado', 'u4', { priority: 2, category: 'Red y conectividad', requester: 'Infraestructura' });
-  ch1.change = { impact: 3, complexity: 2, start: now + 2 * D + 2 * H, hours: 3, rollback: 'Restaurar firmware previo desde TFTP y recargar configuración respaldada.', approvals: [{ by: 'u2', at: now - 20 * H, decision: 'Aprobado', note: 'Ventana nocturna OK' }] };
-  mk('I', 'Lentitud en la red del segundo piso', 'Varios equipos del área de hospitalización tienen la red muy lenta e intermitente desde ayer.', 'c3', 20, 'Asignado', 'u4', { priority: 3, category: 'Red y conectividad', requester: 'Enfermería' });
-  mk('R', 'Instalación de Office en 5 notebooks', 'Necesitamos instalar Office y configurar correo en 5 notebooks nuevos del área administrativa.', 'c3', 50, 'En espera', 'u5', { priority: 4, category: 'Software y aplicaciones', requester: 'Administración' });
-  mk('I', 'Outlook no sincroniza en equipos de admisión', 'El correo no sincroniza en varios equipos, no abre el buzón compartido.', 'c1', 40, 'Resuelto', 'u5', { priority: 3, category: 'Correo y colaboración' });
-  const ch2 = mk('C', 'Migración de servidor de archivos a nueva VM', 'Migrar el servidor de archivos actual a una VM nueva con más almacenamiento y respaldos.', 'c1', 10, 'En evaluación', null, { priority: 3, category: 'Servidores e infraestructura', requester: 'Infraestructura' });
-  ch2.change = { impact: 2, complexity: 3, start: now + 6 * D, hours: 6, rollback: '', approvals: [] };
-  mk('I', 'Posible phishing: funcionarios recibieron correo sospechoso', 'Varios funcionarios reportan un correo sospechoso que pide credenciales. Dos personas hicieron clic en el enlace.', 'c2', 4, 'En curso', 'u4', { priority: 1, category: 'Seguridad', requester: 'Mesa de ayuda' });
-  mk('R', 'Configurar VPN para médico en teletrabajo', 'Por favor configurar acceso VPN para el Dr. Herrera.', 'c2', 6, 'Nuevo', null, { priority: 3, category: 'Red y conectividad', requester: 'Dirección médica' });
-  mk('I', 'Pantalla azul en PC de recepción', 'El computador de recepción muestra pantalla azul al iniciar.', 'c3', 90, 'Cerrado', 'u6', { priority: 3, category: 'Hardware / Equipos' });
-  const ch3 = mk('C', 'Parche de seguridad mensual servidores Windows', 'Aplicar parches de seguridad mensuales en servidores Windows de producción.', 'c3', 48, 'Aprobado', 'u4', { priority: 3, category: 'Servidores e infraestructura', requester: 'Infraestructura' });
-  ch3.change = { impact: 2, complexity: 1, start: now + 4 * D, hours: 2, rollback: 'Desinstalar KBs y restaurar snapshot de VM.', approvals: [{ by: 'u3', at: now - 10 * H, decision: 'Aprobado', note: '' }] };
-  mk('I', 'Se cae el wifi intermitente en pabellón', 'El wifi del pabellón se corta cada rato, médicos no pueden trabajar con las tablets.', 'c2', 9, 'Nuevo', null, { priority: 2, category: 'Red y conectividad' });
-  mk('I', 'Sin conexión a internet en urgencia', 'Urgencia sin conexión a internet desde hace una hora, no cargan los sistemas.', 'c2', 3, 'Nuevo', null, { priority: 1, category: 'Red y conectividad' });
-  mk('I', 'Switch del piso 3 sin enlace', 'El switch del piso 3 no tiene enlace, las bocas están apagadas.', 'c2', 1, 'Nuevo', null, { priority: 2, category: 'Red y conectividad' });
-  mk('R', 'Reporte mensual de tickets', 'Solicito el reporte mensual de tickets atendidos por categoría.', 'c1', 28, 'Asignado', 'u2', { priority: 4, category: 'General' });
-  const c4 = tickets.find(t => t.id === 'I-0001');
-  c4.comments.push({ id: uid(), by: 'u5', at: now - 1.5 * H, text: 'Reinicié el servicio de aplicaciones, revisando conexión a la base de datos.', internal: false });
-  return { users, clients, tickets, seq, session: null };
-}
-function load() {
-  try { S = JSON.parse(localStorage.getItem(KEY)); } catch { S = null; }
-  if (!S || !S.tickets) S = seed();
-  S.audit = S.audit || [];
-  S.users.forEach(u => { if (!u.username) u.username = norm(u.name).replace(/[^a-z ]/g, '').trim().replace(/\s+/g, '.'); });
-  S.session = null;
-  try {
-    const ss = JSON.parse(sessionStorage.getItem(SESS_KEY)), u = ss && user(ss.id);
-    if (u && u.active && u.pass && Date.now() - ss.last < IDLE) S.session = u.id;
-  } catch {}
-  save();
+/* ───────────── Supabase: datos, sesión y sincronización ─────────────
+   El resto de la app trabaja sobre el estado en memoria `S` (como antes). Cada save() sube a la base solo lo que
+   cambió (comparando contra `snap`) y cada ~45 s se vuelve a leer lo que otros usuarios hayan hecho. */
+const CFG = window.NOVADESK_CONFIG || {};
+const sb = window.supabase && CFG.url && CFG.key
+  ? window.supabase.createClient(CFG.url, CFG.key, { auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } })
+  : null;
+const EMAIL_DOMAIN = '@novadesk.local';
+const toIso = t => (t == null ? null : new Date(t).toISOString());
+const toMs = s => (s ? new Date(s).getTime() : null);
+
+const clientRow = c => ({ id: c.id, name: c.name, code: c.code, color: c.color, contact: c.contact || null, sla_factor: c.slaFactor, active: true });
+const fromClient = r => ({ id: r.id, name: r.name, code: r.code, color: r.color, contact: r.contact || '', slaFactor: Number(r.sla_factor) });
+const userRow = u => ({ id: u.id, username: u.username, name: u.name, role: u.role, active: u.active, skills: u.skills, must_change: !!u.mustChange });
+const fromUser = r => ({ id: r.id, username: r.username, name: r.name, role: r.role, active: r.active, skills: r.skills || [], mustChange: r.must_change, lastLogin: toMs(r.last_login) });
+const ticketRow = t => ({ id: t.id, type: t.type, title: t.title, description: t.desc, client_id: t.clientId, requester: t.requester, priority: t.priority, status: t.status,
+  category: t.category, assignee_id: t.assigneeId || null, created_by: t.createdBy, ai_confidence: t.ai ?? null, created_at: toIso(t.createdAt), updated_at: toIso(t.updatedAt),
+  resolved_at: toIso(t.resolvedAt), change_impact: t.change?.impact ?? null, change_complexity: t.change?.complexity ?? null, change_start: toIso(t.change?.start),
+  change_hours: t.change?.hours ?? null, change_rollback: t.change?.rollback ?? null });
+function fromTicket(r) {
+  const t = { id: r.id, type: r.type, title: r.title, desc: r.description, clientId: r.client_id, requester: r.requester, priority: r.priority, status: r.status, category: r.category,
+    assigneeId: r.assignee_id, createdBy: r.created_by, createdAt: toMs(r.created_at), updatedAt: toMs(r.updated_at), resolvedAt: toMs(r.resolved_at), ai: r.ai_confidence, comments: [], history: [] };
+  if (r.type === 'C') t.change = { impact: r.change_impact || 2, complexity: r.change_complexity || 2, start: toMs(r.change_start), hours: r.change_hours == null ? 2 : Number(r.change_hours), rollback: r.change_rollback || '', approvals: [] };
+  return t;
 }
 
-/* ───────────── Seguridad: contraseñas, bloqueo y sesión ───────────── */
-const SESS_KEY = 'novadesk.session', IDLE = 15 * 60e3, ITER = 150000, MAXFAIL = 5, LOCK = 5 * 60e3;
-const enc = new TextEncoder();
-const b64 = b => btoa(String.fromCharCode(...new Uint8Array(b)));
-const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
-const cryptoOk = () => !!(window.crypto && crypto.subtle);
-async function hashPw(pw, salt, iter) {
-  const key = await crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveBits']);
-  return b64(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: iter }, key, 256));
+let snap = { clients: {}, users: {}, tickets: {} }, myRole = null, syncQ = Promise.resolve(), pending = 0, rev = 0;
+const failed = e => { console.error(e); toast('No se pudo guardar en el servidor: ' + (e.message || e)); };
+async function fetchAll(table, order) {
+  const out = [];
+  for (let from = 0; ; from += 1000) {
+    let q = sb.from(table).select('*').range(from, from + 999); order.forEach(o => { q = q.order(o); });
+    const { data, error } = await q; if (error) throw error;
+    out.push(...data); if (data.length < 1000) break;
+  }
+  return out;
 }
-async function makePass(pw) { const salt = crypto.getRandomValues(new Uint8Array(16)); return { salt: b64(salt), iter: ITER, hash: await hashPw(pw, salt, ITER) }; }
-async function checkPass(pw, p) {
-  const h = await hashPw(pw, unb64(p.salt), p.iter); let d = h.length ^ p.hash.length;
-  for (let i = 0; i < h.length; i++) d |= h.charCodeAt(i) ^ (p.hash.charCodeAt(i) || 0);
-  return d === 0;
+async function fetchData(isAdmin) {
+  const audit = isAdmin ? sb.from('audit_log').select('*').order('created_at', { ascending: false }).limit(200).then(r => { if (r.error) throw r.error; return r.data.reverse(); }) : [];
+  const [cl, us, tk, cm, hs, ap, au] = await Promise.all([fetchAll('clients', ['name']), fetchAll('profiles', ['name']), fetchAll('tickets', ['created_at', 'id']),
+    fetchAll('ticket_comments', ['created_at', 'id']), fetchAll('ticket_history', ['created_at', 'id']), fetchAll('change_approvals', ['created_at', 'id']), audit]);
+  return { cl, us, tk, cm, hs, ap, au };
 }
-const DUMMY = { salt: 'AAAAAAAAAAAAAAAAAAAAAA==', iter: ITER, hash: 'x'.repeat(44) };
+function applyData(d) {
+  S.clients = d.cl.map(fromClient); S.users = d.us.map(fromUser); S.tickets = d.tk.map(fromTicket);
+  const by = Object.fromEntries(S.tickets.map(t => [t.id, t]));
+  d.cm.forEach(c => by[c.ticket_id]?.comments.push({ id: c.id, by: c.author_id, at: toMs(c.created_at), text: c.body, internal: c.internal }));
+  d.hs.forEach(h => by[h.ticket_id]?.history.push({ at: toMs(h.created_at), by: h.actor_id, text: h.text }));
+  d.ap.forEach(a => by[a.ticket_id]?.change?.approvals.push({ by: a.approver_id, at: toMs(a.created_at), decision: a.decision, note: a.note }));
+  S.audit = d.au.map(a => ({ at: toMs(a.created_at), by: a.actor_id, text: a.text, sent: true }));
+  snap = { clients: {}, users: {}, tickets: {} };
+  S.clients.forEach(c => { snap.clients[c.id] = JSON.stringify(clientRow(c)); });
+  S.users.forEach(u => { snap.users[u.id] = JSON.stringify(userRow(u)); });
+  S.tickets.forEach(t => { snap.tickets[t.id] = { core: JSON.stringify(ticketRow(t)), cids: new Set(t.comments.map(c => c.id)), nh: t.history.length, na: t.change?.approvals.length || 0 }; });
+}
+const run = async p => { const { error } = await p; if (error) throw error; };
+async function pushChanges() {
+  if (!S.session) return;
+  if (myRole === 'admin') {
+    for (const c of S.clients) { const row = clientRow(c), k = JSON.stringify(row); if (snap.clients[c.id] !== k) { await run(sb.from('clients').upsert(row)); snap.clients[c.id] = k; } }
+    for (const u of S.users) { const row = userRow(u), k = JSON.stringify(row); if (snap.users[u.id] && snap.users[u.id] !== k) { await run(sb.from('profiles').update(row).eq('id', u.id)); snap.users[u.id] = k; } }
+  }
+  for (const t of S.tickets) {
+    const row = ticketRow(t), k = JSON.stringify(row); let s = snap.tickets[t.id];
+    if (!s) { await run(sb.from('tickets').insert(row)); s = snap.tickets[t.id] = { core: k, cids: new Set(), nh: 0, na: 0 }; }
+    else if (s.core !== k) { await run(sb.from('tickets').update(row).eq('id', t.id)); s.core = k; }
+    const newH = t.history.slice(s.nh);
+    if (newH.length) { await run(sb.from('ticket_history').insert(newH.map(h => ({ ticket_id: t.id, actor_id: h.by, text: h.text, to_status: (/^Estado: .* → (.*)$/.exec(h.text) || [])[1] || null, created_at: toIso(h.at) })))); s.nh = t.history.length; }
+    const newC = t.comments.filter(c => !s.cids.has(c.id));
+    if (newC.length) { await run(sb.from('ticket_comments').insert(newC.map(c => ({ id: c.id, ticket_id: t.id, author_id: c.by, body: c.text, internal: !!c.internal, created_at: toIso(c.at) })))); newC.forEach(c => s.cids.add(c.id)); }
+    const aps = t.change?.approvals || [], newA = aps.slice(s.na);
+    if (newA.length) { await run(sb.from('change_approvals').insert(newA.map(a => ({ ticket_id: t.id, approver_id: a.by, decision: a.decision, note: a.note || '', created_at: toIso(a.at) })))); s.na = aps.length; }
+  }
+  const newAu = S.audit.filter(a => !a.sent && a.by);
+  if (newAu.length) { await run(sb.from('audit_log').insert(newAu.map(a => ({ actor_id: a.by, text: a.text, created_at: toIso(a.at) })))); newAu.forEach(a => { a.sent = true; }); }
+}
+/* Sube los cambios en segundo plano (la pantalla se actualiza al instante); si falla, vuelve a leer del servidor. */
+function save() {
+  if (!S.session) return;
+  rev++; pending++;
+  syncQ = syncQ.then(pushChanges).catch(async e => { failed(e); try { applyData(await fetchData(myRole === 'admin')); } catch {} render(); }).finally(() => { pending--; });
+}
+window.addEventListener('beforeunload', e => { if (pending) { e.preventDefault(); e.returnValue = ''; } });
+/* Relee los datos del servidor (cambios de otros usuarios) sin pisar nada que el usuario esté editando. */
+async function refresh() {
+  if (!S.session || pending || ui.overlay || ui.view === 'new' || document.hidden || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '')) return;
+  const r0 = rev;
+  try { const d = await fetchData(myRole === 'admin'); if (rev === r0 && !pending && S.session) { applyData(d); render(); } } catch (e) { console.warn('refresh', e); }
+}
+setInterval(refresh, 45000);
+
+async function enter(uid_, fresh) {
+  const { data: p, error } = await sb.from('profiles').select('*').eq('id', uid_).maybeSingle();
+  if (error) throw error;
+  if (!p || !p.active) { await sb.auth.signOut(); throw new Error('inactive'); }
+  myRole = p.role; applyData(await fetchData(p.role === 'admin'));
+  S.session = uid_;
+  if (fresh) { me().lastLogin = Date.now(); ui.view = 'dashboard'; ui.open = null; ui.overlay = null; audit('Inicio de sesión', uid_); sb.rpc('touch_login').then(() => {}, () => {}); save(); }
+  touch();
+}
+async function boot() {
+  try {
+    if (!sb) throw new Error('No se pudo cargar la conexión a Supabase (revisa tu internet y js/config.js).');
+    const { data: { session } } = await sb.auth.getSession();
+    let ss = null; try { ss = JSON.parse(sessionStorage.getItem(SESS_KEY)); } catch {}
+    if (session && ss && ss.id === session.user.id && Date.now() - ss.last < IDLE) await enter(session.user.id, false);
+    else if (session) await sb.auth.signOut();
+  } catch (e) { ui.loginError = e.message === 'inactive' ? 'Tu cuenta está inactiva. Contacta al administrador.' : String(e.message || e); }
+  ui.booting = false; render();
+}
+
+/* ───────────── Seguridad: contraseñas y sesión ─────────────
+   Las contraseñas las maneja Supabase Auth (hash en el servidor, nunca en esta app ni en la tabla profiles). */
+const SESS_KEY = 'novadesk.session', IDLE = 15 * 60e3;
 function pwProblems(pw) {
   const p = [];
   if (pw.length < 10) p.push('mínimo 10 caracteres'); if (!/[a-z]/.test(pw)) p.push('una minúscula'); if (!/[A-Z]/.test(pw)) p.push('una mayúscula');
   if (!/\d/.test(pw)) p.push('un número'); if (!/[^A-Za-z0-9]/.test(pw)) p.push('un símbolo');
   return p;
 }
-function tempPw() {
-  const set = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789', sym = '!@#$%&*?', r = crypto.getRandomValues(new Uint32Array(14));
-  const s = [...r.slice(0, 12)].map(n => set[n % set.length]).join('') + sym[r[12] % sym.length] + (r[13] % 10);
-  return /[a-z]/.test(s) && /[A-Z]/.test(s) ? s : tempPw();
-}
 const audit = (text, by) => { S.audit.push({ at: Date.now(), by: by === undefined ? S.session : by, text }); S.audit = S.audit.slice(-200); };
-const needsSetup = () => !S.users.some(u => u.role === 'admin' && u.pass);
 let lastActive = Date.now();
 function touch() { lastActive = Date.now(); if (S.session) try { sessionStorage.setItem(SESS_KEY, JSON.stringify({ id: S.session, last: lastActive })); } catch {} }
-function startSession(u) { S.session = u.id; u.lastLogin = Date.now(); ui.view = 'dashboard'; ui.open = null; ui.overlay = null; ui.loginError = ''; audit('Inicio de sesión', u.id); save(); touch(); }
-function endSession(msg) { if (S.session) audit(msg || 'Cierre de sesión'); S.session = null; ui.open = null; ui.overlay = null; try { sessionStorage.removeItem(SESS_KEY); } catch {} save(); }
+function endSession(msg) {
+  if (S.session) audit(msg || 'Cierre de sesión');
+  save(); S.session = null; ui.open = null; ui.overlay = null; try { sessionStorage.removeItem(SESS_KEY); } catch {}
+  syncQ = syncQ.then(() => sb.auth.signOut()).catch(() => {}).then(() => { if (!S.session) { S.users = []; S.clients = []; S.tickets = []; S.audit = []; myRole = null; snap = { clients: {}, users: {}, tickets: {} }; } });
+}
 setInterval(() => { if (S && S.session && Date.now() - lastActive > IDLE) { endSession('Sesión cerrada por inactividad'); ui.loginError = 'Tu sesión se cerró por inactividad. Ingresa nuevamente.'; render(); } }, 20000);
 const theme = () => localStorage.getItem(THEME_KEY) || 'dark';
 const applyTheme = () => document.documentElement.setAttribute('data-theme', theme());
@@ -329,21 +361,11 @@ function checkPwForm(form) {
   form.querySelector('[type=submit]').disabled = mismatch || (!!p1 && pr.length > 0);
 }
 function viewLogin() {
-  if (needsSetup()) return viewSetup();
-  const lock = !cryptoOk() ? '<div class="alert bad">Tu navegador no permite el cifrado necesario. Abre NovaDesk desde un navegador actualizado.</div>' : '';
-  return authFrame('login', 'Mesa de ayuda inteligente · Requerimientos · Incidentes · Cambios', `${lock}${ui.loginError ? `<div class="alert bad">${esc(ui.loginError)}</div>` : ''}
+  return authFrame('login', 'Mesa de ayuda inteligente · Requerimientos · Incidentes · Cambios', `${ui.loginError ? `<div class="alert bad">${esc(ui.loginError)}</div>` : ''}
     <div><label>Usuario</label><input name="username" autocomplete="username" required autofocus value="${esc(ui.loginUser || '')}" placeholder="nombre.apellido"></div>
     ${pwField('password', 'Contraseña', 'current-password', 'lpw')}
     <button class="btn pri" type="submit" style="justify-content:center">Ingresar</button>
     <div class="muted sm">¿Olvidaste tu contraseña? Pide al administrador que la restablezca. Por seguridad la sesión se cierra tras 15 minutos de inactividad.</div>`);
-}
-function viewSetup() {
-  const a = S.users.find(u => u.role === 'admin');
-  return authFrame('setup', 'Primer uso: crea la cuenta del administrador', `<div class="alert">Aún no hay credenciales. Define el usuario y la contraseña del administrador; no hay contraseñas por defecto.</div>
-    <div><label>Nombre completo</label><input name="name" required value="${esc(a?.name || '')}"></div>
-    <div><label>Usuario</label><input name="username" autocomplete="username" required value="${esc(a?.username || '')}"></div>
-    ${pwField('p1', 'Contraseña', 'new-password')}${pwField('p2', 'Repite la contraseña', 'new-password')}${pwHint}
-    <button class="btn pri" type="submit" style="justify-content:center">Crear administrador</button>`);
 }
 function viewForceChange() {
   return authFrame('force', `Hola ${esc(me().name.split(' ')[0])}, debes elegir tu propia contraseña`, `<div class="alert">Tu contraseña es temporal. Define una nueva para continuar.</div>
@@ -474,15 +496,14 @@ function viewClients() {
     <div class="row"><button class="btn sm grow" data-act="clientTickets" data-id="${c.id}">Ver tickets</button>${role() === 'admin' ? `<button class="btn sm" data-act="clientForm" data-id="${c.id}">Editar</button>` : ''}</div></div>`; }).join('')}</div>`);
 }
 function viewUsers() {
-  return viewShell(`<div class="row between wrap" style="margin-bottom:14px"><h1>Usuarios y roles</h1><button class="btn pri" data-act="userForm">＋ Nuevo usuario</button></div>
+  return viewShell(`<div class="row between wrap" style="margin-bottom:14px"><h1>Usuarios y roles</h1><button class="btn pri" data-act="newUser">＋ Nuevo usuario</button></div>
   <div class="card" style="overflow:auto"><table><tr><th>Usuario</th><th>Rol</th><th>Habilidades (usadas por Nova)</th><th>Acceso</th><th></th></tr>
   ${S.users.map(u => `<tr><td><div class="row">${avatar(u)}<div><b>${esc(u.name)}</b><div class="muted sm mono">${esc(u.username)}</div></div></div></td><td>${ROLES[u.role].icon} ${ROLES[u.role].name}</td><td>${u.skills.map(s => `<span class="chip">${esc(s)}</span>`).join('') || '<span class="muted">—</span>'}</td>
-    <td>${!u.active ? '<span class="badge">Inactivo</span>' : !u.pass ? '<span class="badge p2">Sin contraseña</span>' : u.lockUntil > Date.now() ? '<span class="badge p1">Bloqueado</span>' : u.mustChange ? '<span class="badge p2">Clave temporal</span>' : '<span class="badge" style="color:var(--ok)">Activo</span>'}<div class="muted sm">${u.lastLogin ? 'Último acceso ' + rel(u.lastLogin) : 'Nunca ingresó'}</div></td>
-    <td><div class="row"><button class="btn sm" data-act="userForm" data-id="${u.id}">Editar</button><button class="btn sm" data-act="resetPw" data-id="${u.id}">🔑 ${u.pass ? 'Restablecer' : 'Asignar'} clave</button>${u.lockUntil > Date.now() ? `<button class="btn sm" data-act="unlock" data-id="${u.id}">Desbloquear</button>` : ''}</div></td></tr>`).join('')}</table></div>
+    <td>${!u.active ? '<span class="badge p2">Inactivo / pendiente</span>' : u.mustChange ? '<span class="badge p2">Clave temporal</span>' : '<span class="badge" style="color:var(--ok)">Activo</span>'}<div class="muted sm">${u.lastLogin ? 'Último acceso ' + rel(u.lastLogin) : 'Nunca ingresó'}</div></td>
+    <td><div class="row"><button class="btn sm" data-act="userForm" data-id="${u.id}">Editar</button><button class="btn sm" data-act="resetPw" data-id="${u.id}">🔑 Restablecer clave</button></div></td></tr>`).join('')}</table></div>
   <div class="card" style="margin-top:16px"><h3>🛡️ Registro de seguridad (últimos 15 eventos)</h3>${S.audit.slice(-15).reverse().map(a => `<div class="row sm" style="padding:4px 0"><span class="muted" style="width:110px">${fdate(a.at)}</span><b style="width:150px">${esc(user(a.by)?.name || 'Anónimo')}</b><span>${esc(a.text)}</span></div>`).join('') || '<div class="muted">Sin eventos</div>'}</div>
   <div class="card" style="margin-top:16px"><h3>Matriz de permisos</h3><table><tr><th>Acción</th><th>👑 Admin</th><th>🧭 Analista</th><th>🛠️ Técnico</th></tr>
-  ${[['Ver todos los tickets', 1, 1, 0], ['Ver tickets asignados / propios', 1, 1, 1], ['Crear tickets', 1, 1, 1], ['Clasificar y asignar con Nova', 1, 1, 0], ['Cambiar prioridad / categoría', 1, 1, 0], ['Trabajar y resolver tickets', 1, 1, 1], ['Aprobar / rechazar cambios (CAB)', 1, 1, 0], ['Ejecutar cambios aprobados', 1, 1, 1], ['Gestionar clientes y usuarios', 1, 0, 0], ['Restablecer contraseñas y desbloquear cuentas', 1, 0, 0], ['Restablecer tickets de demo', 1, 0, 0]].map(r => `<tr><td>${r[0]}</td>${r.slice(1).map(x => `<td>${x ? '✅' : '—'}</td>`).join('')}</tr>`).join('')}</table>
-  <button class="btn bad sm" data-act="reset" style="margin-top:12px">Restablecer tickets de demo</button></div>`);
+  ${[['Ver todos los tickets', 1, 1, 0], ['Ver tickets asignados / propios', 1, 1, 1], ['Crear tickets', 1, 1, 1], ['Clasificar y asignar con Nova', 1, 1, 0], ['Cambiar prioridad / categoría', 1, 1, 0], ['Trabajar y resolver tickets', 1, 1, 1], ['Aprobar / rechazar cambios (CAB)', 1, 1, 0], ['Ejecutar cambios aprobados', 1, 1, 1], ['Gestionar clientes y usuarios', 1, 0, 0], ['Restablecer contraseñas', 1, 0, 0]].map(r => `<tr><td>${r[0]}</td>${r.slice(1).map(x => `<td>${x ? '✅' : '—'}</td>`).join('')}</tr>`).join('')}</table></div>`);
 }
 
 function novaPanel(a, cur) {
@@ -561,18 +582,26 @@ function viewOverlay() {
   if (o.kind === 'palette') return `<div class="overlay center" data-act="closeOv"><div class="palette"><input id="pal" placeholder="Pregunta o busca: “incidentes críticos de bupa”, “mis tickets”, “cambios”…" autocomplete="off"><div class="res" id="palRes"></div></div></div>`;
   if (o.kind === 'client') { const c = S.clients.find(x => x.id === o.id) || { name: '', code: '', color: '#8b7bff', contact: '', slaFactor: 1 }; return modal(o.id ? 'Editar cliente' : 'Nuevo cliente', `<div><label>Nombre</label><input name="name" required value="${esc(c.name)}"></div><div class="grid" style="grid-template-columns:1fr 1fr 1fr;gap:10px"><div><label>Código</label><input name="code" value="${esc(c.code)}"></div><div><label>Color</label><input type="color" name="color" value="${c.color}"></div><div><label>Factor SLA</label><input type="number" name="slaFactor" step="0.05" min="0.25" max="3" value="${c.slaFactor}"></div></div><div><label>Contacto</label><input name="contact" value="${esc(c.contact)}"></div>`, 'saveClient'); }
   if (o.kind === 'pw') return modal('Cambiar mi contraseña', `${pwField('cur', 'Contraseña actual', 'current-password')}${pwField('p1', 'Nueva contraseña', 'new-password')}${pwField('p2', 'Repite la nueva contraseña', 'new-password')}${pwHint}`, 'savePw');
-  if (o.kind === 'temp') return `<div class="overlay center"><div class="modal col"><h2>🔑 Contraseña temporal</h2><p class="muted">Entrégala a <b>${esc(o.name)}</b> por un canal seguro. <b>Se muestra una sola vez</b>; al ingresar deberá cambiarla.</p>
-    <div class="card" style="background:var(--bg2)"><div class="muted sm">Usuario</div><div class="mono" style="font-size:16px">${esc(o.username)}</div><div class="muted sm" style="margin-top:8px">Contraseña temporal</div><div class="mono" style="font-size:20px;letter-spacing:1px;user-select:all">${esc(o.pw)}</div></div>
+  if (o.kind === 'temp') return `<div class="overlay center"><div class="modal col"><h2>🔑 ${o.created ? 'Usuario creado' : 'Contraseña restablecida'}</h2><p class="muted">Entrégale esto a <b>${esc(o.name)}</b> por un canal seguro. <b>La contraseña se muestra una sola vez</b>; al ingresar deberá elegir una propia.</p>
+    <div class="card" style="background:var(--bg2)"><div class="muted sm">Usuario (o correo) para ingresar</div><div class="mono" style="font-size:16px;user-select:all">${esc(o.login)}</div><div class="muted sm" style="margin-top:8px">Contraseña temporal</div><div class="mono" style="font-size:20px;letter-spacing:1px;user-select:all">${esc(o.pw)}</div></div>
     <div class="row" style="justify-content:flex-end"><button class="btn" data-act="copyTemp">Copiar</button><button class="btn pri" data-act="closeOv">Ya la anoté</button></div></div></div>`;
-  if (o.kind === 'user') { const u = S.users.find(x => x.id === o.id) || { name: '', username: '', role: 'tecnico', active: true, skills: [] }; return modal(o.id ? 'Editar usuario' : 'Nuevo usuario (se generará una contraseña temporal)', `<div class="grid" style="grid-template-columns:1fr 1fr;gap:10px"><div><label>Nombre completo</label><input name="name" required value="${esc(u.name)}"></div><div><label>Usuario</label><input name="username" required pattern="[a-z0-9._-]{3,30}" title="Minúsculas, números, punto, guion" value="${esc(u.username)}"></div></div><div class="grid" style="grid-template-columns:1fr 1fr;gap:10px"><div><label>Rol</label><select name="role">${Object.entries(ROLES).map(([k, v]) => opt(k, v.name, u.role)).join('')}</select></div><div><label>Estado</label><select name="active">${opt('1', 'Activo', u.active ? '1' : '0')}${opt('0', 'Inactivo', u.active ? '1' : '0')}</select></div></div><div><label>Habilidades (técnicos)</label><div class="row wrap">${CATS.filter(c => c !== 'General').map(c => `<label class="row sm" style="margin:0"><input type="checkbox" style="width:auto" name="sk" value="${esc(c)}" ${u.skills.includes(c) ? 'checked' : ''}>${esc(c)}</label>`).join('')}</div></div>`, 'saveUser'); }
+  if (o.kind === 'user') {
+    const isNew = !o.id, u = S.users.find(x => x.id === o.id) || { name: '', username: '', role: 'tecnico', active: true, skills: [] };
+    return modal(isNew ? 'Nuevo usuario' : 'Editar usuario', `${isNew ? '<p class="muted sm" style="margin:0">Se genera una contraseña temporal que verás una sola vez. Al ingresar, la persona deberá elegir la suya.</p>' : ''}
+    <div class="grid" style="grid-template-columns:1fr 1fr;gap:10px"><div><label>Nombre completo</label><input name="name" required value="${esc(u.name)}"></div>
+    <div><label>${isNew ? 'Usuario o correo' : 'Usuario'}</label>${isNew ? `<input name="username" required placeholder="nombre.apellido o correo@empresa.cl" autocomplete="off" pattern="[A-Za-z0-9._@+\\-]{3,80}" title="Un usuario (letras minúsculas, números, punto o guion) o un correo">` : `<input name="username" readonly title="El usuario está ligado a su cuenta de acceso y no se puede cambiar" value="${esc(u.username)}">`}</div></div>
+    <div class="grid" style="grid-template-columns:1fr 1fr;gap:10px"><div><label>Rol</label><select name="role">${Object.entries(ROLES).map(([k, v]) => opt(k, v.name, u.role)).join('')}</select></div>
+    ${isNew ? '' : `<div><label>Estado</label><select name="active">${opt('1', 'Activo', u.active ? '1' : '0')}${opt('0', 'Inactivo', u.active ? '1' : '0')}</select></div>`}</div>
+    <div><label>Habilidades (técnicos)</label><div class="row wrap">${CATS.filter(c => c !== 'General').map(c => `<label class="row sm" style="margin:0"><input type="checkbox" style="width:auto" name="sk" value="${esc(c)}" ${u.skills.includes(c) ? 'checked' : ''}>${esc(c)}</label>`).join('')}</div></div>`, 'saveUser', isNew ? 'Crear usuario' : 'Guardar'); }
   return '';
 }
-const modal = (title, body, act) => `<div class="overlay center" data-act="closeOv"><form class="modal col" id="modalForm" data-submit="${act}"><h2>${title}</h2>${body}<div class="row" style="justify-content:flex-end"><button class="btn" type="button" data-act="closeOv">Cancelar</button><button class="btn pri" type="submit">Guardar</button></div></form></div>`;
+const modal = (title, body, act, okLabel = 'Guardar') => `<div class="overlay center" data-act="closeOv"><form class="modal col" id="modalForm" data-submit="${act}"><h2>${title}</h2>${body}<div class="row" style="justify-content:flex-end"><button class="btn" type="button" data-act="closeOv">Cancelar</button><button class="btn pri" type="submit">${okLabel}</button></div></form></div>`;
 
 /* ───────────── Render y router ───────────── */
 function render() {
   applyTheme();
   const app = $('#app'), keep = document.activeElement?.dataset?.f, pos = document.activeElement?.selectionStart;
+  if (ui.booting) { app.innerHTML = '<div class="login"><div class="box"><h1 style="font-size:42px">NovaDesk</h1><p class="muted">Conectando…</p></div></div>'; return; }
   if (!me()) { app.innerHTML = viewLogin(); const u = $('[name=username]'); if (u && !u.value) u.focus(); else if ($('#lpw')) $('#lpw').focus(); return; }
   if (me().mustChange) { app.innerHTML = viewForceChange(); return; }
   const views = { dashboard: viewDashboard, tickets: viewTickets, board: viewBoard, changes: viewChanges, clients: viewClients, users: viewUsers, new: viewNew };
@@ -614,11 +643,15 @@ const A = {
   logout: () => { endSession(); ui.loginError = ''; ui.loginUser = ''; render(); },
   togglePw: e => { const i = e.target.closest('.row').querySelector('input'); i.type = i.type === 'password' ? 'text' : 'password'; },
   pwForm: () => { ui.overlay = { kind: 'pw' }; render(); },
+  newUser: () => { ui.overlay = { kind: 'user' }; render(); },
   copyTemp: () => { navigator.clipboard?.writeText(ui.overlay.pw).then(() => toast('Contraseña copiada')); },
-  unlock: d => { const u = user(d.id); u.lockUntil = 0; u.failed = 0; audit(`Desbloqueó la cuenta de ${u.name}`); save(); toast('Cuenta desbloqueada'); render(); },
   resetPw: async d => {
-    const u = user(d.id), pw = tempPw(), had = !!u.pass; u.pass = await makePass(pw); u.mustChange = true; u.failed = 0; u.lockUntil = 0;
-    audit(`${had ? 'Restableció' : 'Asignó'} la contraseña de ${u.name}`); save(); ui.overlay = { kind: 'temp', name: u.name, username: u.username, pw }; render();
+    const u = user(d.id); if (!confirm(`¿Restablecer la contraseña de ${u.name}? Se generará una temporal y se le exigirá cambiarla al ingresar.`)) return;
+    try {
+      const r = await adminUsers({ action: 'reset', id: u.id }); u.mustChange = true; snap.users[u.id] = JSON.stringify(userRow(u));
+      S.audit.push({ at: Date.now(), by: S.session, text: `Restableció la contraseña de ${u.name}`, sent: true });
+      ui.overlay = { kind: 'temp', name: u.name, login: r.login, pw: r.password }; render();
+    } catch (e) { toast(e.message); }
   },
   nav: d => { ui.view = d.v; ui.open = null; ui.overlay = null; if (d.v === 'new') ui.draft = {}; render(); },
   theme: () => { localStorage.setItem(THEME_KEY, theme() === 'dark' ? 'light' : 'dark'); render(); },
@@ -638,72 +671,95 @@ const A = {
   clientForm: d => { ui.overlay = { kind: 'client', id: d.id }; render(); },
   userForm: d => { ui.overlay = { kind: 'user', id: d.id }; render(); },
   clientTickets: d => { ui.f = { q: '', type: '', status: 'abiertos', client: d.id, prio: '', assignee: '' }; ui.view = 'tickets'; render(); },
-  reset: () => { if (confirm('¿Restablecer los tickets de demo? Se perderán los tickets creados. Usuarios y contraseñas se conservan.')) { const f = seed(); S.tickets = f.tickets; S.seq = f.seq; audit('Restableció los tickets de demo'); save(); ui.open = null; render(); } },
 };
 const SUBMIT = {
   async savePw(fd) {
-    const u = me();
-    if (!(await checkPass(fd.get('cur'), u.pass))) { audit('Intento fallido de cambio de contraseña'); save(); return toast('La contraseña actual no es correcta'), false; }
+    const u = me(), { data: { user: au } } = await sb.auth.getUser(), { error } = await sb.auth.signInWithPassword({ email: au?.email || u.username + EMAIL_DOMAIN, password: fd.get('cur') });
+    if (error) { audit('Intento fallido de cambio de contraseña'); save(); return toast('La contraseña actual no es correcta'), false; }
     return setOwnPassword(u, fd.get('p1'), fd.get('p2'), 'Cambió su contraseña');
   },
   saveClient(fd) { if (role() !== 'admin') return false; const o = ui.overlay, n = fd.get('name').trim(); if (!n) return; const data = { name: n, code: (fd.get('code') || n.slice(0, 4)).toUpperCase(), color: fd.get('color'), contact: fd.get('contact'), slaFactor: parseFloat(fd.get('slaFactor')) || 1 };
-    if (o.id) Object.assign(S.clients.find(c => c.id === o.id), data); else S.clients.push({ id: 'c' + uid(), ...data }); toast('Cliente guardado'); },
+    if (S.clients.some(c => c.id !== o.id && (c.name.toLowerCase() === data.name.toLowerCase() || c.code === data.code))) return toast('Ya existe un cliente con ese nombre o código'), false;
+    if (o.id) Object.assign(S.clients.find(c => c.id === o.id), data); else S.clients.push({ id: uid(), ...data }); toast('Cliente guardado'); },
   async saveUser(fd) {
     if (role() !== 'admin') return false;
-    const o = ui.overlay, data = { name: fd.get('name').trim(), username: fd.get('username').trim().toLowerCase(), role: fd.get('role'), active: fd.get('active') === '1', skills: fd.get('role') === 'tecnico' ? fd.getAll('sk') : [] };
-    if (!/^[a-z0-9._-]{3,30}$/.test(data.username)) return toast('Usuario inválido'), false;
-    if (S.users.some(u => u.username === data.username && u.id !== o.id)) return toast('Ese nombre de usuario ya existe'), false;
-    const others = S.users.filter(u => u.id !== o.id && u.role === 'admin' && u.active && u.pass);
-    if (o.id && !others.length && (data.role !== 'admin' || !data.active)) return toast('Debe quedar al menos un administrador activo'), false;
+    const o = ui.overlay;
+    if (!o.id) {   // usuario nuevo: lo crea la Edge Function (necesita la clave secreta, que nunca está en la página)
+      const name = fd.get('name').trim(), login = fd.get('username').trim().toLowerCase(), skills = fd.get('role') === 'tecnico' ? fd.getAll('sk') : [];
+      if (!name || !login) return toast('Completa el nombre y el usuario'), false;
+      const email = login.includes('@') ? login : login + EMAIL_DOMAIN, uname = email.split('@')[0];
+      if (S.users.some(u => u.username === uname)) return toast('Ya existe un usuario con ese nombre'), false;
+      if (SUBMIT.busy) return false; SUBMIT.busy = true;
+      try {
+        const r = await adminUsers({ action: 'create', name, login, role: fd.get('role'), skills });
+        const nu = { id: r.id, username: r.username, name, role: fd.get('role'), active: true, skills, mustChange: true, lastLogin: null };
+        S.users.push(nu); snap.users[nu.id] = JSON.stringify(userRow(nu));
+        S.audit.push({ at: Date.now(), by: S.session, text: `Creó al usuario ${name} (${ROLES[nu.role].name})`, sent: true });
+        ui.overlay = { kind: 'temp', created: true, name, login: r.login, pw: r.password }; render();
+      } catch (e) { toast(e.message); }
+      finally { SUBMIT.busy = false; }
+      return false;
+    }
+    const data = { name: fd.get('name').trim(), role: fd.get('role'), active: fd.get('active') === '1', skills: fd.get('role') === 'tecnico' ? fd.getAll('sk') : [] };
+    if (!data.name) return toast('Falta el nombre'), false;
+    const others = S.users.filter(u => u.id !== o.id && u.role === 'admin' && u.active);
+    if (!others.length && (data.role !== 'admin' || !data.active)) return toast('Debe quedar al menos un administrador activo'), false;
     if (o.id === S.session && !data.active) return toast('No puedes desactivar tu propia cuenta'), false;
-    if (o.id) { Object.assign(S.users.find(u => u.id === o.id), data); audit(`Editó al usuario ${data.name}`); toast('Usuario guardado'); return; }
-    const pw = tempPw(), nu = { id: 'u' + uid(), ...data, pass: await makePass(pw), mustChange: true, failed: 0 };
-    S.users.push(nu); audit(`Creó al usuario ${nu.name} (${ROLES[nu.role].name})`); save();
-    ui.overlay = { kind: 'temp', name: nu.name, username: nu.username, pw }; render(); return false;
+    Object.assign(S.users.find(u => u.id === o.id), data); audit(`Editó al usuario ${data.name}`); toast('Usuario guardado');
   },
 };
 async function setOwnPassword(u, p1, p2, msg) {
   if (p1 !== p2) return toast('Las contraseñas no coinciden'), false;
   const pr = pwProblems(p1); if (pr.length) return toast('La contraseña necesita: ' + pr.join(', ')), false;
-  if (u.pass && await checkPass(p1, u.pass)) return toast('La nueva contraseña debe ser distinta a la actual'), false;
-  u.pass = await makePass(p1); u.mustChange = false; u.failed = 0; u.lockUntil = 0; audit(msg, u.id); save(); toast('Contraseña actualizada'); return true;
+  const { error } = await sb.auth.updateUser({ password: p1 });
+  if (error) return toast(/different|same/i.test(error.message) ? 'La nueva contraseña debe ser distinta a la actual' : 'No se pudo cambiar la contraseña: ' + error.message), false;
+  await sb.rpc('clear_must_change'); u.mustChange = false; audit(msg, u.id); save(); toast('Contraseña actualizada'); return true;
+}
+/* Crear usuarios y restablecer claves: solo lo puede el administrador, y lo hace la Edge Function «admin-users» en el servidor. */
+async function adminUsers(body) {
+  const { data, error } = await sb.functions.invoke('admin-users', { body });
+  if (error) {
+    let msg = error.message;
+    try { const j = await error.context.json(); if (j?.error) msg = j.error; } catch {}
+    throw new Error(msg);
+  }
+  if (data?.error) throw new Error(data.error);
+  return data;
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function login(fd) {
-  const un = fd.get('username').trim().toLowerCase(), pw = fd.get('password'), u = S.users.find(x => x.username === un);
+  const un = fd.get('username').trim().toLowerCase(), pw = fd.get('password');
   ui.loginUser = un; ui.loginError = '';
+  if (!sb) { ui.loginError = 'No se pudo cargar la conexión a Supabase.'; return render(); }
   const generic = 'Usuario o contraseña incorrectos.';
-  if (u && u.lockUntil > Date.now()) { await checkPass(pw, DUMMY); ui.loginError = `Cuenta bloqueada por intentos fallidos. Intenta en ${dur(u.lockUntil - Date.now())} o pide al administrador que la desbloquee.`; return render(); }
-  const ok = u && u.active && u.pass ? await checkPass(pw, u.pass) : (await checkPass(pw, DUMMY), false);
-  if (!ok) {
-    if (u) { u.failed = (u.failed || 0) + 1; audit(`Intento de ingreso fallido (${u.failed}/${MAXFAIL})`, u.id); if (u.failed >= MAXFAIL) { u.lockUntil = Date.now() + LOCK; u.failed = 0; audit('Cuenta bloqueada temporalmente por intentos fallidos', u.id); } save(); }
-    else audit(`Intento de ingreso con usuario inexistente «${un.slice(0, 30)}»`, null);
-    await sleep(700); ui.loginError = generic; return render();
-  }
-  u.failed = 0; u.lockUntil = 0; ui.loginUser = ''; startSession(u); render();
+  /* Se puede ingresar con el usuario (nombre.apellido → @novadesk.local) o con el correo completo. */
+  const email = un.includes('@') ? un : un + EMAIL_DOMAIN;
+  const { data, error } = /^[a-z0-9._-]{3,30}$/.test(un) || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(un) ? await sb.auth.signInWithPassword({ email, password: pw }) : { error: { message: 'bad user' } };
+  if (error) { await sleep(700); ui.loginError = /rate|too many|limit/i.test(error.message) ? 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.' : generic; return render(); }
+  try { await enter(data.user.id, true); ui.loginUser = ''; }
+  catch (e) { ui.loginError = e.message === 'inactive' ? 'Tu cuenta está inactiva o pendiente de activación. Contacta al administrador.' : 'No se pudieron cargar tus datos: ' + (e.message || e); await sb.auth.signOut(); }
+  render();
 }
 async function submitAuth(form) {
   const fd = new FormData(form), kind = form.dataset.kind;
   if (kind === 'login') return login(fd);
-  if (kind === 'setup') {
-    const a = S.users.find(u => u.role === 'admin'), un = fd.get('username').trim().toLowerCase();
-    if (!/^[a-z0-9._-]{3,30}$/.test(un)) return toast('Usuario inválido (minúsculas, números, punto o guion)');
-    a.name = fd.get('name').trim() || a.name; a.username = un; a.active = true;
-    if (await setOwnPassword(a, fd.get('p1'), fd.get('p2'), 'Creó la cuenta de administrador')) { startSession(a); render(); }
-  } else if (kind === 'force') {
-    const u = me(); if (await setOwnPassword(u, fd.get('p1'), fd.get('p2'), 'Estableció su contraseña definitiva')) render();
-  }
+  if (kind === 'force') { const u = me(); if (await setOwnPassword(u, fd.get('p1'), fd.get('p2'), 'Estableció su contraseña definitiva')) render(); }
 }
-function createTicket(fd) {
-  const title = fd.get('title').trim(), desc = fd.get('desc').trim(), cl = fd.get('clientId'), a = classify(title + ' ' + desc, cl);
-  const type = fd.get('type') || a.type, auto = [!fd.get('type'), !fd.get('priority'), !fd.get('category')].some(Boolean);
-  const n = ++S.seq[type], now = Date.now();
-  const t = { id: `${type}-${String(n).padStart(4, '0')}`, type, title, desc, clientId: cl, requester: fd.get('requester').trim() || me().name, priority: +fd.get('priority') || a.priority, category: fd.get('category') || a.category,
-    status: type === 'C' ? 'Borrador' : 'Nuevo', assigneeId: null, createdBy: S.session, createdAt: now, updatedAt: now, comments: [], history: [{ at: now, by: S.session, text: 'Ticket creado' + (auto ? ` · Nova clasificó con ${a.confidence}% de confianza` : '') }], ai: auto ? a.confidence : null };
-  if (type === 'C') { const st = fd.get('start'); t.change = { impact: +fd.get('impact') || 2, complexity: +fd.get('complexity') || 2, start: st ? new Date(st).getTime() : null, hours: +fd.get('hours') || 2, rollback: fd.get('rollback') || '', approvals: [] }; }
-  else if (staff() && a.assignee && t.priority <= 2) { t.assigneeId = a.assignee.id; t.status = 'Asignado'; t.history.push({ at: now, by: S.session, text: `Nova asignó automáticamente a ${a.assignee.name} (prioridad ${PRIO[t.priority]})` }); }
-  else if (!staff()) { t.assigneeId = S.session; t.status = 'Asignado'; }
-  S.tickets.push(t); save(); toast(`Ticket ${t.id} creado${a.major ? ' · ⚡ posible incidente mayor' : ''}`); ui.view = 'tickets'; ui.open = t.id; ui.f.status = 'abiertos'; ui.f.type = ''; render();
+async function createTicket(fd) {
+  if (createTicket.busy) return; createTicket.busy = true;
+  try {
+    const title = fd.get('title').trim(), desc = fd.get('desc').trim(), cl = fd.get('clientId'), a = classify(title + ' ' + desc, cl);
+    const type = fd.get('type') || a.type, auto = [!fd.get('type'), !fd.get('priority'), !fd.get('category')].some(Boolean);
+    const { data: id, error } = await sb.rpc('next_ticket_id', { p_type: type });
+    if (error) return toast('No se pudo generar el número del ticket: ' + error.message);
+    const now = Date.now();
+    const t = { id, type, title, desc, clientId: cl, requester: fd.get('requester').trim() || me().name, priority: +fd.get('priority') || a.priority, category: fd.get('category') || a.category,
+      status: type === 'C' ? 'Borrador' : 'Nuevo', assigneeId: null, createdBy: S.session, createdAt: now, updatedAt: now, comments: [], history: [{ at: now, by: S.session, text: 'Ticket creado' + (auto ? ` · Nova clasificó con ${a.confidence}% de confianza` : '') }], ai: auto ? a.confidence : null };
+    if (type === 'C') { const st = fd.get('start'); t.change = { impact: +fd.get('impact') || 2, complexity: +fd.get('complexity') || 2, start: st ? new Date(st).getTime() : null, hours: +fd.get('hours') || 2, rollback: fd.get('rollback') || '', approvals: [] }; }
+    else if (staff() && a.assignee && t.priority <= 2) { t.assigneeId = a.assignee.id; t.status = 'Asignado'; t.history.push({ at: now, by: S.session, text: `Nova asignó automáticamente a ${a.assignee.name} (prioridad ${PRIO[t.priority]})` }); }
+    else if (!staff()) { t.assigneeId = S.session; t.status = 'Asignado'; }
+    S.tickets.push(t); save(); toast(`Ticket ${t.id} creado${a.major ? ' · ⚡ posible incidente mayor' : ''}`); ui.view = 'tickets'; ui.open = t.id; ui.f.status = 'abiertos'; ui.f.type = ''; render();
+  } finally { createTicket.busy = false; }
 }
 
 /* ───────────── Eventos ───────────── */
@@ -732,7 +788,7 @@ document.addEventListener('change', e => {
   if (el.dataset.edit) { const k = el.dataset.edit; let v = el.value; if (k === 'priority') v = +v; if (k === 'assigneeId') v = v || null; t[k] = v; log(t, `${k === 'assigneeId' ? 'Asignado a ' + (user(v)?.name || 'nadie') : k === 'priority' ? 'Prioridad: ' + PRIO[v] : 'Categoría: ' + v}`); save(); toast('Ticket actualizado'); render(); }
   if (el.dataset.chg) { const k = el.dataset.chg; t.change = t.change || { impact: 2, complexity: 2, hours: 2, approvals: [] }; t.change[k] = k === 'start' ? (el.value ? new Date(el.value).getTime() : null) : ['impact', 'complexity'].includes(k) ? +el.value : el.value; log(t, `Plan del cambio actualizado (${k})`); save(); render(); }
 });
-const ADMIN_ACTS = new Set(['clientForm', 'userForm', 'reset', 'resetPw', 'unlock']);
+const ADMIN_ACTS = new Set(['clientForm', 'userForm', 'newUser', 'resetPw']);
 const STAFF_ACTS = new Set(['applyAI', 'assignAI', 'csv', 'cab']);
 document.addEventListener('submit', async e => {
   e.preventDefault();
@@ -756,5 +812,5 @@ document.addEventListener('drop', e => {
   const t = S.tickets.find(x => x.id === e.dataTransfer.getData('text/plain')); if (t && t.status !== l.dataset.lane && setStatus(t, l.dataset.lane)) toast(`${t.id} → ${l.dataset.lane}`); render();
 });
 
-load(); render();
+boot();
 })();
