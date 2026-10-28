@@ -177,24 +177,77 @@ const applyTheme = () => document.documentElement.setAttribute('data-theme', the
 
 /* ───────────── Nova: motor de clasificación ───────────── */
 const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-const has = (text, kw) => new RegExp('(^|[^a-z0-9])' + kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(s|es)?([^a-z0-9]|$)').test(text);
+/* Reglas de lenguaje (español de Chile) con pesos. En las listas de palabras (todas sin tildes):
+   «raiz*» acepta cualquier terminación (funcion* → funciona, funcionan, funcionó); «no X» acepta también «no me X», «no se X»…;
+   «(a|b)» son alternativas; «+» al inicio = señal fuerte (2); «~» = señal débil o genérica (0.4); una frase (con espacios) pesa 1.6; el resto, 1. */
+const KW = new Map();
+function kwOf(raw) {
+  let k = KW.get(raw); if (k) return k;
+  const w = raw[0] === '+' ? 2 : raw[0] === '~' ? 0.4 : raw.includes(' ') ? 1.6 : 1, s = raw.replace(/^[+~]/, ''), star = s.endsWith('*');
+  const body = star ? s.slice(0, -1) : s, neg = body.startsWith('no ');
+  let core = (neg ? body.slice(3) : body).replace(/[.+^${}[\]\\]/g, '\\$&').replace(/ /g, '(s|es)?\\s+');
+  if (neg) core = 'no\\s+((me|nos|se|le|les|lo|la)\\s+)?' + core;
+  k = { w, re: new RegExp('(^|[^a-z0-9])' + core + (star ? '[a-z0-9]*' : '(s|es)?') + '([^a-z0-9]|$)') };
+  KW.set(raw, k); return k;
+}
+const has = (text, raw) => kwOf(raw).re.test(text);
+/* Suma el peso de las palabras de la lista que aparecen en el texto y devuelve lo que calzó (tal como lo escribió la persona). */
+function scan(text, list) {
+  let sc = 0; const hits = [];
+  for (const raw of list) { const k = kwOf(raw), m = k.re.exec(text); if (m) { sc += k.w; hits.push(m[0].replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '')); } }
+  return { sc, hits };
+}
+/* Seguridad va primero: si hay empate entre categorías, gana la que más urge revisar. */
 const CAT_KW = {
-  'Red y conectividad': ['red', 'internet', 'wifi', 'vpn', 'conexion', 'switch', 'router', 'enlace', 'latencia', 'firewall', 'ping', 'sin conexion'],
-  'Impresión': ['impresora', 'imprimir', 'imprime', 'toner', 'impresion', 'etiqueta', 'zebra', 'cola de impresion'],
-  'Correo y colaboración': ['correo', 'outlook', 'mail', 'teams', 'calendario', 'buzon', 'spam', 'sincroniza'],
-  'Accesos y cuentas': ['contrasena', 'clave', 'usuario', 'acceso', 'cuenta', 'permiso', 'perfil', 'active directory', 'login', 'mfa', 'credencial', 'alta de'],
-  'Hardware / Equipos': ['pc', 'notebook', 'computador', 'monitor', 'teclado', 'mouse', 'disco duro', 'pantalla azul', 'equipo', 'ups', 'lector', 'tablet'],
-  'Software y aplicaciones': ['aplicacion', 'sistema', 'software', 'instalar', 'instalacion', 'licencia', 'excel', 'office', 'erp', 'his', 'ris', 'pacs', 'agenda', 'ficha'],
-  'Base de datos': ['base de datos', 'sql', 'query', 'respaldo', 'backup', 'replica', 'oracle', 'tablespace'],
-  'Seguridad': ['virus', 'malware', 'phishing', 'ransomware', 'antivirus', 'intrusion', 'sospechoso', 'vulnerabilidad', 'cifrado', 'hackeo'],
-  'Servidores e infraestructura': ['servidor', 'vm', 'vmware', 'storage', 'datacenter', 'cpu', 'memoria', 'cluster', 'hipervisor', 'disco lleno', 'firmware'],
-  'Telefonía': ['telefono', 'anexo', 'central telefonica', 'voip', 'llamada', 'ip phone'],
+  'Seguridad': ['+virus', '+malware', '+phishing', '+pishing', '+ransomware', '+antivirus', '+intrusion', '+sospechos*', '+hackeo', '+hackeado', '+vulnerabilidad', '+fraude', '+estafa', '+suplantacion', '+spam', '+(hizo|hice|hicieron|hicimos) (clic|click)', '+entreg(o|ue|aron|amos) (sus |mis |las )?credenciales', '+correo (falso|fraudulento)', 'cifrado', 'cuenta comprometida', 'robo de'],
+  'Red y conectividad': ['+internet', '+wifi', '+wi fi', '+vpn', '+switch', '+router', '+firewall', 'red', 'conexion', 'enlace', 'latencia', 'ping', 'dns', 'dhcp', 'direccion ip', 'punto de red', 'cable de red', 'access point', 'ancho de banda', 'fibra', 'proxy'],
+  'Impresión': ['+impresora', '+imprim*', '+impresion', 'toner', 'tinta', 'cartucho', 'etiqueta', '+zebra', 'cola de impresion', 'atasco', 'escaner', 'scanner', 'fotocopiadora', 'multifuncional', 'spooler'],
+  'Correo y colaboración': ['+correo', '+outlook', '+mail', 'e mail', '+teams', 'zoom', 'calendario', 'buzon', 'casilla', 'firma de correo', 'lista de distribucion', 'gmail', 'office 365', 'onedrive', 'sharepoint', '~sincroniza*'],
+  'Accesos y cuentas': ['+contrasena', '+clave', '+password', '+credencial*', '+mfa', '+2fa', '+active directory', '+ldap', 'autenticacion', 'iniciar sesion', 'inicio de sesion', 'login', 'permiso*', 'crear (un )?usuario', 'alta de usuario', 'baja de usuario', 'nuevo usuario', '(usuario|cuenta) (esta |se encuentra )?bloquead*', 'bloqueo de cuenta', 'contrasena incorrecta', 'clave incorrecta', 'credenciales invalidas', 'usuario o contrasena', 'desbloque*', 'cuenta de usuario', 'perfil de acceso', 'carpeta compartida', 'unidad de red', '~usuario', '~cuenta', '~acceso', '~perfil'],
+  'Hardware / Equipos': ['+notebook', '+computador*', '+laptop', '+monitor', '+teclado', '+mouse', 'pc', 'disco duro', 'ssd', 'pantalla negra', 'pantalla en negro', 'sin imagen', 'pantalla azul', 'webcam', 'audifonos', 'parlantes', 'cargador', 'bateria', 'ups', 'lector de (huella|codigo de barras|tarjeta)', 'tablet', 'tarjetero', 'totem', 'no enciende', 'no prende', 'se apaga', '~equipo', '~pantalla'],
+  'Software y aplicaciones': ['+aplicacion', '+software', '+licencia', '+erp', '+his', '+ris', '+pacs', '+lis', '+excel', '+word', '+powerpoint', '+office', 'instalar', 'instalacion', 'pdf', 'chrome', 'navegador', 'windows', 'ficha clinica', 'agenda medica', 'toma de hora', 'sap', 'programa', '~sistema', '~agenda', '~ficha', '~app'],
+  'Base de datos': ['+base de datos', '+sql', '+oracle', '+postgres*', '+mysql', 'query', 'respaldo', 'backup', 'replica', 'tablespace', 'dump'],
+  'Servidores e infraestructura': ['+servidor*', '+vmware', '+hipervisor', '+esxi', '+hyper v', '+datacenter', 'data center', '+storage', '+cluster', 'maquina virtual', 'vm', 'raid', 'nas', 'rack', 'sala de servidores', 'disco lleno', 'espacio en disco', 'cpu', 'memoria', 'windows server', 'linux', '~firmware', '~respaldo'],
+  'Telefonía': ['+telefono', '+anexo', '+central telefonica', '+voip', '+troncal', 'llamada', 'ip phone', 'telefono ip', 'celular', 'linea telefonica', 'sin tono', 'casilla de voz'],
 };
+/* Cosas de todos los días que se «cambian» o «reemplazan»: eso es un requerimiento, no un Control de cambios. */
+const COTIDIANO = 'clave|contrasena|password|toner|cartucho|tinta|teclado|mouse|raton|monitor|pantalla|equipo|notebook|pc|computador|computadora|impresora|bateria|pila|cable|cargador|disco|turno|nombre|usuario|cuenta|perfil|correo|anexo|telefono|licencia|permiso|rol|puesto|escritorio|ubicacion|oficina|box|sala';
 const TYPE_KW = {
-  I: ['no funciona', 'no anda', 'caido', 'caida', 'error', 'falla', 'fallando', 'lento', 'lentitud', 'intermitente', 'bloqueado', 'no puede', 'no pueden', 'no abre', 'no carga', 'sin conexion', 'sin acceso', 'se cayo', 'se cae', 'se congela', 'pantalla azul', 'no responde', 'no imprime', 'no enciende', 'dejo de', 'no sincroniza', 'sospechoso', 'sin enlace'],
-  R: ['solicito', 'solicitud', 'necesito', 'necesitamos', 'requiero', 'alta de', 'crear', 'creacion', 'instalar', 'instalacion', 'habilitar', 'activar', 'entregar', 'nuevo', 'nueva', 'por favor', 'agregar', 'configurar', 'traslado', 'reporte', 'acceso a'],
-  C: ['cambio', 'actualizar', 'actualizacion', 'migrar', 'migracion', 'ventana', 'implementar', 'despliegue', 'parche', 'upgrade', 'reemplazo', 'reemplazar', 'decomision', 'mantencion programada', 'rollback', 'produccion', 'firmware', 'nueva version', 'subir de version'],
+  I: [ // algo que funcionaba y dejó de funcionar, o funciona mal
+    '+no (funcion|pued|logr|deja|permit|abr|carg|imprim|enciend|prend|respond|sirv|and|conect|sincroniz|llega|recib|ingres|acced|aparec|muestr|reconoc|detect|inici|arranc|guard|entr|marc|suena)*',
+    '+no hay (internet|red|senal|conexion|sistema|acceso|luz|energia|tono|impresion|servicio)', '+no tengo (acceso|internet|correo|red|sistema|senal|clave)',
+    '+sin (acceso|internet|red|conexion|enlace|sistema|senal|tono|luz|energia|respuesta|correo|servicio|telefono|wifi|vpn|imagen|audio)',
+    '+se (cay|cae)*', '+caido', '+caida', '+fall*', '+error', '+dejo de', '+dejaron de', '+pantalla azul', '+pantalla negra', '+pantalla en negro',
+    '+se (congel|cuelg|trab|pega|apag|reinicia|corta|desconect|bloque|queda|quedo)*', '+lento', '+lenta', '+lentitud', '+demora*', '+tard(a|an|o|ando)',
+    '+intermitente', '+intermitencia', '+bloquead*', '+bloqueo', '+parpadea*', '+titila*', '+inaccesible', '+indisponible', '+colapso', '+saturad*', 'ruido', 'quemado', 'calienta*', 'sobrecalent*', 'imposible',
+    'virus', 'malware', 'ransomware', 'phishing', 'hackeo', 'sospechos*', 'se perdio', 'desaparec*', 'cortes', '~problema*', '~falla',
+  ],
+  R: [ // alguien pide algo, consulta o quiere hacer algo nuevo
+    '+requerimiento', 'solicit*', 'necesit*', 'requiero', 'requerimos', 'quisiera', 'quiero', 'favor de', 'podrian', '~por favor', '~favor', '+alta de', '+baja de', '+habilit*', '+deshabilit*',
+    '+crear', '+creacion', 'activar', '+instalar', '+instalacion', 'configurar', 'configuracion de', '+restablec*', '+resete*', '+blanque*', '+desbloque*', 'entregar', 'entrega de', 'traslado', 'trasladar',
+    'agregar', 'ampliar', 'asignar', 'prestamo', 'consulta', 'consulto', 'duda', 'como (puedo|hago|se|configuro|creo|accedo|instalo|cambio)', 'informacion', 'cotizacion', 'acceso a', 'permiso para',
+    'olvid(e|o|amos|aron) (mi |mis |la |su |sus |las )?(clave|contrasena|password|credenciales)', 'perdi (mi |la )?(clave|contrasena)', '~nuevo', '~nueva', '~actualiza*', 'reporte',
+    `cambio de (${COTIDIANO})`, `cambiar (el |la |los |las |mi |mis |un |una )?(${COTIDIANO})`, `reemplazo de (${COTIDIANO})`, `reemplazar (el |la |los |las |mi |mis )?(${COTIDIANO})`, `renovacion de (${COTIDIANO})`,
+  ],
+  C: [ // intervención planificada sobre infraestructura o sistemas (necesita ventana, rollback y aprobación)
+    '+rollback', '+reversa', '+cab', '+control de cambios', '+solicitud de cambio', '+rfc', '+parche*', '+upgrade', '+migracion', '+migrar', '+despliegue', '+desplegar', '+deploy', '+implementar', '+implementacion', '+decomision*',
+    '+ventana de (mantencion|mantenimiento|cambio|trabajo|implementacion)', 'ventana horaria', 'ventana el', 'mantencion programada', 'mantenimiento programado', 'nueva version', 'subir de version',
+    '(pasar|paso|pase|puesta) (a|en) produccion', 'dar de baja (el|la|los|las) (servidor|vm|sistema|aplicacion)', 'reemplazo de (servidor|switch|firewall|storage|enlace|equipo de red|router)',
+    'cambio (programado|de version|de configuracion|de firmware|de plataforma|de arquitectura|en (produccion|el firewall|la red|el servidor|la base de datos|el sistema))',
+    'actualizacion (de|del) (servidor|sistema|sistema operativo|firmware|motor|base de datos|erp|his|version|plataforma|ambiente)', 'actualizar (el|la|los|las) (servidor|sistema operativo|firmware|erp|his|plataforma|version|base de datos|motor)',
+    '~cambio', '~actualiza*', '~produccion', '~firmware',
+  ],
 };
+/* Prioridad: lo que la baja de 3 (urgencia e impacto) y lo que la sube. Las frases «tranquilas» («no es urgente») se quitan antes de buscar urgencia. */
+const CALM = ['no es urgente', 'no urgente', 'sin urgencia', 'no es critico', 'no es grave', 'no es emergencia', 'no es una emergencia', 'sin apuro', 'sin prisa', 'cuando pueda', 'cuando tengan tiempo', 'no corre prisa', 'no es prioritario', 'baja prioridad'];
+const CALM_RE = new RegExp('(^|[^a-z0-9])(' + CALM.join('|').replace(/ /g, '\\s+') + ')(?![a-z0-9])', 'g');
+const MASS = ['todos', 'todas', 'toda la (clinica|sede|red|oficina|unidad|institucion|empresa|planta|operacion|area)', 'todo el (hospital|centro|piso|servicio|edificio|recinto|establecimiento|personal|laboratorio|area|sector)', 'caida total', 'masivo', 'en todas'];
+const CRIT = ['paralizad*', 'urgente', 'critico', 'ransomware', 'pacientes', 'sin sistema', 'no pueden trabajar', 'no podemos trabajar', 'no pueden atender', 'no se puede atender', 'emergencia', 'riesgo vital', 'detenid*',
+  '(hizo|hice|hicieron|hicimos) (clic|click)', 'entreg(o|ue|aron|amos) (sus |mis |las )?credenciales'];
+const HIGH = ['varios', 'varias', 'no pueden', 'no podemos', 'intermitente', 'pabellon', 'sin conexion', 'sin enlace', 'sin internet', 'produccion', 'servidor*', 'base de datos', 'respaldo', 'central telefonica', 'troncal',
+  'virus', 'malware', 'phishing', 'sospechos*', 'intrusion', 'hackeo', 'urgencia', 'uci', 'laboratorio', 'farmacia', 'admision', 'caja', 'imagenologia', 'ficha clinica', 'agenda medica', 'medico*', 'enfermer*',
+  'gerente', 'gerencia', 'director*', 'jefe'];
+const LOW = ['consulta', 'duda', 'estetico', 'mejora', 'sugerencia', 'reporte', 'a futuro', 'informativo', 'cotizacion', 'quisiera saber', 'como (puedo|hago|se|accedo|configuro|creo|instalo|cambio)'];
 const PLAYBOOK = {
   'Red y conectividad': ['Verificar enlace físico/puertos del switch y estado del equipo de borde', 'Hacer ping/traceroute al gateway y a un servicio externo', 'Revisar si hay otros tickets de red del mismo sitio (¿falla masiva?)'],
   'Impresión': ['Revisar cola de impresión y reiniciar el servicio Spooler', 'Confirmar conexión/IP de la impresora y consumibles', 'Probar reinstalando el driver en un equipo'],
@@ -208,64 +261,78 @@ const PLAYBOOK = {
   'Telefonía': ['Verificar registro del anexo en la central', 'Probar el teléfono en otra boca de red', 'Revisar troncal si es falla general'],
   General: ['Contactar al solicitante para precisar el alcance', 'Definir categoría y prioridad con el cliente'],
 };
-function tokens(s) { return new Set(norm(s).split(/[^a-z0-9]+/).filter(w => w.length > 3)); }
+const STOP = new Set('para esta este esto estos estas tiene tienen desde hasta cuando donde porque como pero sobre entre favor buenos buenas dias tardes noches saludos gracias hola estimados estimado muy mucho mucha todo toda todos todas cada otro otra segun'.split(' '));
+const TK = new Map();
+function tokens(s) {
+  let r = TK.get(s); if (r) return r;
+  r = new Set(norm(s).split(/[^a-z0-9]+/).filter(w => w.length > 3 && !STOP.has(w)).map(w => (w.length > 5 ? w.replace(/(aciones|acion|ciones|cion|mente|ando|iendo|ados|adas|ado|ada|es|s)$/, '') : w.replace(/s$/, ''))));
+  if (TK.size > 3000) TK.clear();
+  TK.set(s, r); return r;
+}
 
+/* opts.type fija el tipo (el que eligió la persona o el que ya tiene el ticket) para que prioridad, acciones e incidente mayor se calculen con él. */
 function classify(text, clientId, opts = {}) {
-  const n = norm(text), why = [], kws = [];
-  // tipo
-  const ts = { R: 0, I: 0, C: 0 };
-  for (const k of Object.keys(TYPE_KW)) for (const w of TYPE_KW[k]) if (has(n, w)) { ts[k] += w.length > 7 ? 1.4 : 1; kws.push(w); }
-  if (/(^|\W)(cambio|ventana|rollback|parche)/.test(n)) ts.C += 1;
-  if (!ts.R && !ts.I && !ts.C) ts.I = 0.3;
-  const sorted = Object.entries(ts).sort((a, b) => b[1] - a[1]);
-  const type = sorted[0][0], tot = sorted.reduce((a, b) => a + b[1], 0) || 1;
-  const typeConf = Math.min(0.97, 0.45 + (sorted[0][1] - sorted[1][1]) / tot * 0.5 + Math.min(sorted[0][1], 4) * 0.04);
-  why.push(`Detecté lenguaje de ${TYPES[type].name.toLowerCase()} (${Math.round(typeConf * 100)}%)`);
+  const n = norm(text), why = [], kws = [], forced = TYPES[opts.type] ? opts.type : null;
+  // tipo: gana el que más señales suma; si empatan, el incidente (es peor tratar una caída como un requerimiento)
+  const ts = {};
+  for (const k of Object.keys(TYPE_KW)) { const r = scan(n, TYPE_KW[k]); ts[k] = r.sc; kws.push(...r.hits); }
+  if (ts.C < 1) ts.C = 0; // «cambio», «actualizar» o «producción» sueltos no bastan para hablar de un Control de cambios
+  ts.I += 0.01;
+  const sorted = Object.entries(ts).sort((a, b) => b[1] - a[1]), top = sorted[0][1], second = sorted[1][1], evid = top >= 0.4;
+  const type = forced || (evid ? sorted[0][0] : 'I');
+  const typeConf = forced ? 1 : evid ? Math.min(0.96, 0.25 + 0.45 * Math.min(top, 4) / 4 + 0.25 * (top - second) / top) : 0.3;
+  if (forced) why.push(`Tipo fijado: ${TYPES[type].name.toLowerCase()}`);
+  else if (evid) why.push(`Detecté lenguaje de ${TYPES[type].name.toLowerCase()} (${Math.round(typeConf * 100)}%)`);
+  else why.push('No encontré señales claras de tipo: lo dejé como incidente para que no se pierda. Revísalo.');
   // categoría
-  let cat = 'General', best = 0;
+  let cat = 'General', best = 0, next = 0;
   for (const [c, list] of Object.entries(CAT_KW)) {
-    let sc = 0; for (const w of list) if (has(n, w)) { sc += w.includes(' ') ? 2 : 1; kws.push(w); }
-    if (sc > best) { best = sc; cat = c; }
+    const r = scan(n, list); kws.push(...r.hits);
+    if (r.sc > best) { next = best; best = r.sc; cat = c; } else if (r.sc > next) next = r.sc;
   }
-  const catConf = best ? Math.min(0.96, 0.5 + best * 0.14) : 0.3;
-  if (best) why.push(`Vocabulario de «${cat}» (${best} coincidencias)`);
-  // prioridad
-  const CRIT = ['todos', 'toda la', 'caida total', 'paralizad', 'urgente', 'critico', 'ransomware', 'produccion', 'pacientes', 'urgencia', 'pabellon', 'sin sistema', 'masivo', 'no pueden trabajar', 'credenciales', 'hizo clic', 'hicieron clic', 'en todas'];
-  const HIGH = ['varios', 'area', 'servicio', 'intermitente', 'bloqueado', 'no puede', 'no pueden', 'gerente', 'jefe', 'medicos', 'sin conexion', 'sin enlace'];
-  const LOW = ['cuando pueda', 'sin apuro', 'consulta', 'duda', 'estetico', 'mejora', 'no urgente', 'reporte'];
+  if (best < 0.4) { cat = 'General'; best = 0; }
+  const catConf = !best ? 0.25 : best < 1 ? 0.35 : Math.min(0.96, 0.25 + 0.45 * Math.min(best, 4) / 4 + 0.25 * (best - next) / best);
+  if (best) why.push(`Vocabulario de «${cat}» (${Math.round(best * 10) / 10} pts${next && next >= best * 0.7 ? '; también podría ser otra categoría' : ''})`);
+  else why.push('No reconocí la categoría: queda como General.');
+  // prioridad = urgencia e impacto
+  const calm = (n.match(CALM_RE) || []).length;
+  const np = n.replace(CALM_RE, ' ').replace(/todos los (dias|lunes|martes|miercoles|jueves|viernes|sabados|domingos|meses|anos|turnos)|todas las (noches|mananas|tardes|semanas)/g, ' ');
+  const mass = scan(np, MASS).hits, hitsC = [...mass, ...scan(np, CRIT).hits], hitsH = scan(np, HIGH).hits, hitsL = [...scan(n, LOW).hits, ...Array(calm).fill('sin urgencia')];
   let p = type === 'R' ? 3.4 : 3;
-  const hitsC = CRIT.filter(w => has(n, w)), hitsH = HIGH.filter(w => has(n, w)), hitsL = LOW.filter(w => has(n, w));
-  p -= hitsC.length * 1.1 + hitsH.length * 0.55; p += hitsL.length * 1.2;
+  p -= Math.min(hitsC.length * 1.1, 2.6) + Math.min(hitsH.length * (type === 'R' ? 0.3 : 0.55), 1.4); p += hitsL.length * 1.2;
+  if (type === 'I' && mass.length) p = Math.min(p, 1.4);
   if (type === 'C') p = Math.max(p, 2);
-  if (has(n, 'emergencia')) p = 1;
+  if (has(np, 'emergencia')) p = 1;
   const priority = Math.max(1, Math.min(4, Math.round(p)));
   if (hitsC.length) why.push(`Señales de criticidad: «${hitsC.slice(0, 3).join('», «')}»`);
   else if (hitsH.length) why.push(`Señales de impacto: «${hitsH.slice(0, 3).join('», «')}»`);
-  const impact = hitsC.some(w => ['todos', 'toda la', 'masivo', 'en todas', 'caida total'].includes(w)) ? 'Masivo (toda la sede)' : hitsH.length || hitsC.length ? 'Departamental' : 'Individual';
-  // asignación sugerida
-  const techs = S.users.filter(u => u.role === 'tecnico' && u.active);
+  if (hitsL.length) why.push(`Señales de baja urgencia: «${hitsL.slice(0, 2).join('», «')}»`);
+  const impact = mass.length ? 'Masivo (toda la sede)' : hitsH.length || hitsC.length ? 'Departamental' : 'Individual';
+  // asignación sugerida: técnicos activos según habilidad y carga; si no hay técnicos, quien pueda recibir tickets (administrador/analista)
+  const act = S.users.filter(u => u.active), techs = act.some(u => u.role === 'tecnico') ? act.filter(u => u.role === 'tecnico') : act;
   const load = u => S.tickets.filter(t => t.assigneeId === u.id && isOpen(t)).length;
   let assignee = null, bs = -1e9;
   for (const u of techs) { const sc = (u.skills.includes(cat) ? 3 : 0) - load(u) * 0.6; if (sc > bs) { bs = sc; assignee = u; } }
-  if (assignee) why.push(`${assignee.name}: ${assignee.skills.includes(cat) ? 'domina ' + cat : 'menor carga'} (${load(assignee)} tickets activos)`);
-  // similares
+  if (assignee) why.push(`${assignee.name}: ${assignee.skills.includes(cat) ? 'domina ' + cat : act.some(u => u.role === 'tecnico') ? 'menor carga' : 'no hay técnicos activos'} (${load(assignee)} tickets activos)`);
+  // similares (palabras en común, sin muletillas ni plurales)
   const tk = tokens(text);
   const similar = S.tickets.filter(t => t.id !== opts.excludeId).map(t => {
     const o = tokens(t.title + ' ' + t.desc); let inter = 0; tk.forEach(w => o.has(w) && inter++);
     const sim = inter / (tk.size + o.size - inter || 1) + (t.clientId === clientId ? 0.05 : 0);
-    return { t, sim };
-  }).filter(x => x.sim > 0.14).sort((a, b) => b.sim - a.sim).slice(0, 3);
-  // incidente mayor
+    return { t, sim, inter };
+  }).filter(x => x.sim > 0.14 && (x.inter >= 2 || x.sim >= 0.4)).sort((a, b) => b.sim - a.sim).slice(0, 3);
+  // incidente mayor: varios incidentes abiertos de la misma categoría y cliente (la categoría General no cuenta: ahí cae lo que no se pudo clasificar)
   let major = null;
-  if (type === 'I') {
+  if (type === 'I' && cat !== 'General') {
     const same = S.tickets.filter(t => t.id !== opts.excludeId && t.type === 'I' && isOpen(t) && t.category === cat && t.clientId === clientId && Date.now() - t.createdAt < D);
     if (same.length >= 2) major = `Ya hay ${same.length} incidentes abiertos de «${cat}» para este cliente en 24 h: posible incidente mayor.`;
   }
   const actions = [...(PLAYBOOK[cat] || PLAYBOOK.General)];
   if (priority === 1) actions.unshift('Escalar al analista de guardia y notificar al cliente cada 30 minutos');
   if (type === 'C') actions.unshift('Exigir plan de rollback, ventana y aprobación CAB antes de ejecutar');
-  return { type, typeConf, category: cat, catConf, priority, impact, assignee, why, keywords: [...new Set(kws)].slice(0, 8), similar, major, actions: actions.slice(0, 4),
-    confidence: Math.round(((typeConf + catConf) / 2) * 100) };
+  const confidence = Math.round((forced ? catConf : (typeConf + catConf) / 2) * 100);
+  if (confidence < 50) why.push('Confianza baja: conviene revisar tipo y categoría a mano.');
+  return { type, typeConf, category: cat, catConf, priority, impact, assignee, why, keywords: [...new Set(kws)].slice(0, 8), similar, major, actions: actions.slice(0, 4), confidence };
 }
 
 /* ───────────── SLA, riesgo y transiciones ───────────── */
@@ -312,7 +379,7 @@ function setStatus(t, to, note) {
   if (t.type === 'C' && to === 'Programado' && !(t.change && t.change.start)) return toast('Define primero la ventana de implementación'), false;
   if (t.type === 'C' && to === 'En evaluación' && !(t.change && t.change.rollback)) return toast('Agrega el plan de rollback antes de enviar a evaluación'), false;
   if (t.type !== 'C' && ['Asignado', 'En curso'].includes(to) && !t.assigneeId) {
-    const a = role() === 'tecnico' ? me() : classify(t.title + ' ' + t.desc, t.clientId, { excludeId: t.id }).assignee;
+    const a = role() === 'tecnico' ? me() : classify(t.title + ' ' + t.desc, t.clientId, { excludeId: t.id, type: t.type }).assignee;
     if (a) { t.assigneeId = a.id; log(t, `Asignado a ${a.name}${role() === 'tecnico' ? '' : ' (sugerido por Nova)'}`); }
   }
   const from = t.status; t.status = to;
@@ -403,7 +470,7 @@ function trend(vis) {
 }
 function insights(vis) {
   const out = [], open = vis.filter(isOpen), g = {};
-  open.filter(t => t.type === 'I' && Date.now() - t.createdAt < D).forEach(t => { const k = t.clientId + '|' + t.category; (g[k] = g[k] || []).push(t); });
+  open.filter(t => t.type === 'I' && t.category !== 'General' && Date.now() - t.createdAt < D).forEach(t => { const k = t.clientId + '|' + t.category; (g[k] = g[k] || []).push(t); });
   Object.values(g).filter(a => a.length >= 3).forEach(a => out.push({ ico: '⚡', cls: 'bad', txt: `<b>Posible incidente mayor:</b> ${a.length} incidentes de «${a[0].category}» en ${esc(client(a[0].clientId).name)} en 24 h. Recomiendo abrir un problema y avisar al cliente.` }));
   const risk_ = open.filter(t => slaInfo(t) && slaInfo(t).st !== 'ok'); if (risk_.length) out.push({ ico: '⏱️', cls: 'warn', txt: `<b>${risk_.length} ticket(s)</b> con SLA en riesgo o vencido. El más urgente: ${risk_.sort((a, b) => slaInfo(b).pct - slaInfo(a).pct)[0].id}.` });
   const un = open.filter(t => !t.assigneeId && t.type !== 'C'); if (un.length && staff()) out.push({ ico: '🧩', cls: 'warn', txt: `<b>${un.length} ticket(s) sin asignar.</b> Nova sugiere técnicos según habilidades y carga; entra al ticket y aplica la sugerencia.` });
@@ -520,7 +587,7 @@ function novaPanel(a, cur) {
 
 function viewNew() {
   const d = ui.draft || {}, t = d.type || '';
-  const a = (d.title || d.desc) ? classify((d.title || '') + ' ' + (d.desc || ''), d.clientId || S.clients[0].id) : null;
+  const a = (d.title || d.desc) ? classify((d.title || '') + ' ' + (d.desc || ''), d.clientId || S.clients[0].id, { type: d.type }) : null;
   return viewShell(`<h1 style="margin-bottom:16px">Nuevo ticket</h1><div class="detail" style="grid-template-columns:1fr 360px">
   <form class="card col" id="newForm" autocomplete="off">
     <div class="grid" style="grid-template-columns:1fr 1fr;gap:10px">
@@ -543,7 +610,7 @@ function viewNew() {
 }
 
 function viewDrawer(t) {
-  const flow = flowOf(t), idx = flow.indexOf(t.status), a = classify(t.title + ' ' + t.desc, t.clientId, { excludeId: t.id });
+  const flow = flowOf(t), idx = flow.indexOf(t.status), a = classify(t.title + ' ' + t.desc, t.clientId, { excludeId: t.id, type: t.type });
   const s = slaInfo(t), conf = changeConflicts(t), r = risk(t.change);
   const ev = [...t.history.map(h => ({ ...h, k: 'h' })), ...t.comments.map(c => ({ ...c, k: 'c' }))].sort((x, y) => x.at - y.at);
   const ed = staff();
@@ -664,8 +731,8 @@ const A = {
   status: d => { const t = S.tickets.find(x => x.id === d.id); if (setStatus(t, d.to)) { toast(`${t.id} → ${d.to}`); render(); } },
   cab: d => { const t = S.tickets.find(x => x.id === d.id); if (setStatus(t, d.d)) { toast(`${t.id}: ${d.d}`); render(); } },
   comment: d => { const txt = $('#cm').value.trim(); if (!txt) return; const t = S.tickets.find(x => x.id === d.id); t.comments.push({ id: uid(), by: S.session, at: Date.now(), text: txt, internal: $('#cmInt').checked }); t.updatedAt = Date.now(); save(); render(); },
-  applyAI: d => { const t = S.tickets.find(x => x.id === d.id), a = classify(t.title + ' ' + t.desc, t.clientId, { excludeId: t.id }); t.category = a.category; t.priority = a.priority; t.ai = a.confidence; log(t, `Nova aplicó categoría «${a.category}» y prioridad ${PRIO[a.priority]}`); save(); toast('Sugerencia aplicada'); render(); },
-  assignAI: d => { const t = S.tickets.find(x => x.id === d.id), a = classify(t.title + ' ' + t.desc, t.clientId, { excludeId: t.id }); t.assigneeId = a.assignee.id; log(t, `Nova asignó a ${a.assignee.name}`); save(); toast(`Asignado a ${a.assignee.name}`); render(); },
+  applyAI: d => { const t = S.tickets.find(x => x.id === d.id), a = classify(t.title + ' ' + t.desc, t.clientId, { excludeId: t.id, type: t.type }); t.category = a.category; t.priority = a.priority; t.ai = a.confidence; log(t, `Nova aplicó categoría «${a.category}» y prioridad ${PRIO[a.priority]}`); save(); toast('Sugerencia aplicada'); render(); },
+  assignAI: d => { const t = S.tickets.find(x => x.id === d.id), a = classify(t.title + ' ' + t.desc, t.clientId, { excludeId: t.id, type: t.type }); t.assigneeId = a.assignee.id; log(t, `Nova asignó a ${a.assignee.name}`); save(); toast(`Asignado a ${a.assignee.name}`); render(); },
   csv: () => { const rows = [['ID', 'Tipo', 'Asunto', 'Cliente', 'Prioridad', 'Estado', 'Categoría', 'Asignado', 'Creado']].concat(filtered().map(t => [t.id, TYPES[t.type].name, t.title, client(t.clientId).name, PRIO[t.priority], t.status, t.category, user(t.assigneeId)?.name || '', new Date(t.createdAt).toISOString()]));
     const blob = new Blob(['﻿' + rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\n')], { type: 'text/csv' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'novadesk-tickets.csv'; a.click(); },
   clientForm: d => { ui.overlay = { kind: 'client', id: d.id }; render(); },
@@ -748,7 +815,7 @@ async function submitAuth(form) {
 async function createTicket(fd) {
   if (createTicket.busy) return; createTicket.busy = true;
   try {
-    const title = fd.get('title').trim(), desc = fd.get('desc').trim(), cl = fd.get('clientId'), a = classify(title + ' ' + desc, cl);
+    const title = fd.get('title').trim(), desc = fd.get('desc').trim(), cl = fd.get('clientId'), a = classify(title + ' ' + desc, cl, { type: fd.get('type') });
     const type = fd.get('type') || a.type, auto = [!fd.get('type'), !fd.get('priority'), !fd.get('category')].some(Boolean);
     const { data: id, error } = await sb.rpc('next_ticket_id', { p_type: type });
     if (error) return toast('No se pudo generar el número del ticket: ' + error.message);
